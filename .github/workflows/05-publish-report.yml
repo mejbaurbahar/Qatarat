@@ -44,7 +44,7 @@ jobs:
           sudo ln -s /opt/allure/bin/allure /usr/local/bin/allure
           allure --version
 
-      - name: Download all test artifacts
+      - name: Download all JUnit XML artifacts
         uses: actions/download-artifact@v4
         with:
           path: raw-artifacts/
@@ -60,7 +60,7 @@ jobs:
           merge-multiple: true
         continue-on-error: true
 
-      - name: Collect all JUnit XMLs into allure-results
+      - name: Collect JUnit XMLs into allure-results
         run: |
           mkdir -p allure-results
           find raw-artifacts/ -name "*.xml" -exec cp {} allure-results/ \; 2>/dev/null || true
@@ -73,210 +73,68 @@ jobs:
           if [ "$(ls -A allure-results/ 2>/dev/null)" ]; then
             allure generate allure-results/ --clean -o allure-report/
           else
-            echo "No results yet — generating placeholder report"
-            mkdir -p allure-report
+            echo "No results yet — skipping allure generate"
           fi
 
-      - name: Generate dashboard index page
-        run: |
-          python3 - <<'PYEOF'
-          import xml.etree.ElementTree as ET, os, glob, json
-          from datetime import datetime, timezone
+      - name: Generate data.js from test results
+        run: python3 testing/generate_data_js.py raw-artifacts/ gh-pages/data.js
 
-          # Gather stats from all JUnit XML files
-          suites_data = []
+      - name: Copy React dashboard UI to gh-pages
+        run: |
+          mkdir -p gh-pages/views
+          cp testing/report-ui/index.html    gh-pages/index.html
+          cp testing/report-ui/ui.jsx        gh-pages/ui.jsx
+          cp testing/report-ui/tweaks-panel.jsx gh-pages/tweaks-panel.jsx
+          cp testing/report-ui/app.jsx       gh-pages/app.jsx
+          cp testing/report-ui/views/*.jsx   gh-pages/views/
+
+      - name: Copy Allure report into gh-pages
+        run: cp -r allure-report/ gh-pages/allure-report/ 2>/dev/null || mkdir -p gh-pages/allure-report
+
+      - name: Publish step summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET, os, glob
           xmls = glob.glob("raw-artifacts/**/*.xml", recursive=True)
-          for xml_path in xmls:
+          total = passed = failed = skipped = 0
+          rows = ""
+          for xml_path in sorted(xmls):
               try:
                   root = ET.parse(xml_path).getroot()
                   suites = root.findall(".//testsuite") or [root]
                   for ts in suites:
-                      tests = ts.findall("testcase")
-                      if not tests: continue
-                      total = len(tests)
-                      failed = sum(1 for t in tests if t.find("failure") is not None or t.find("error") is not None)
-                      skipped = sum(1 for t in tests if t.find("skipped") is not None)
-                      passed = total - failed - skipped
-                      name = ts.get("name") or os.path.basename(xml_path).replace(".xml","")
-                      suites_data.append({"name": name, "total": total, "passed": passed, "failed": failed, "skipped": skipped})
+                      for tc in ts.findall("testcase"):
+                          total += 1
+                          name = tc.get("name", os.path.basename(xml_path).replace(".xml",""))
+                          if tc.find("failure") is not None or tc.find("error") is not None:
+                              failed += 1; icon = "❌"
+                          elif tc.find("skipped") is not None:
+                              skipped += 1; icon = "⏭️"
+                          else:
+                              passed += 1; icon = "✅"
+                          rows += f"| {icon} | {name} |\n"
               except Exception as e:
-                  print(f"Warning: could not parse {xml_path}: {e}")
+                  print(f"Warning: {xml_path}: {e}")
+          pct = int(passed/total*100) if total else 0
+          bar = "🟩"*(pct//10) + "🟥"*((100-pct)//10)
+          summary = f"""## 📊 Qatarat Test Report Published
+          {bar}
+          | Metric | Value |
+          |--------|-------|
+          | ✅ Passed  | {passed} |
+          | ❌ Failed  | {failed} |
+          | ⏭️ Skipped | {skipped} |
+          | 📊 Total   | {total} |
+          | 📈 Pass rate | {pct}% |
 
-          total = sum(s["total"] for s in suites_data)
-          passed = sum(s["passed"] for s in suites_data)
-          failed = sum(s["failed"] for s in suites_data)
-          skipped = sum(s["skipped"] for s in suites_data)
-          pct = round(passed / total * 100, 1) if total else 0
-
-          run_num = os.environ.get("GITHUB_RUN_NUMBER", "—")
-          repo    = os.environ.get("GITHUB_REPOSITORY", "mejbaurbahar/Qatarat")
-          sha     = os.environ.get("GITHUB_SHA", "")[:7]
-          now     = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-
-          rows = ""
-          for s in suites_data:
-              p = round(s["passed"]/s["total"]*100) if s["total"] else 0
-              badge = f'<span class="badge {"bg-success" if p==100 else "bg-warning text-dark" if p>=50 else "bg-danger"}">{p}%</span>'
-              rows += f"""<tr>
-                <td>{s["name"]}</td>
-                <td class="text-center">{s["total"]}</td>
-                <td class="text-center text-success fw-bold">{s["passed"]}</td>
-                <td class="text-center text-danger fw-bold">{s["failed"]}</td>
-                <td class="text-center text-secondary">{s["skipped"]}</td>
-                <td class="text-center">{badge}</td>
-              </tr>"""
-
-          if not rows:
-              rows = '<tr><td colspan="6" class="text-center text-muted py-4">No test results yet. Trigger a workflow to generate results.</td></tr>'
-
-          status_color = "#198754" if pct >= 90 else "#ffc107" if pct >= 60 else "#dc3545"
-          status_icon  = "✅" if pct >= 90 else "⚠️" if pct >= 60 else "❌"
-
-          html = f"""<!DOCTYPE html>
-          <html lang="en">
-          <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>Qatarat — Test Report</title>
-            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-            <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-            <style>
-              body {{ background: #0d1117; color: #e6edf3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }}
-              .card {{ background: #161b22; border: 1px solid #30363d; border-radius: 12px; }}
-              .stat-card {{ transition: transform .2s; }}
-              .stat-card:hover {{ transform: translateY(-4px); }}
-              .big-number {{ font-size: 3rem; font-weight: 700; line-height: 1; }}
-              .pct-ring {{ position: relative; display: inline-block; }}
-              table {{ color: #e6edf3; }}
-              thead {{ background: #21262d; }}
-              tbody tr:hover {{ background: #21262d; }}
-              .badge {{ font-size: .8rem; padding: .4em .7em; border-radius: 6px; }}
-              a {{ color: #58a6ff; }}
-              a:hover {{ color: #79c0ff; }}
-              .allure-btn {{ background: linear-gradient(135deg, #e91e8c, #7b2ff7); border: none; border-radius: 8px; color: #fff; padding: .6rem 1.4rem; font-weight: 600; text-decoration: none; transition: opacity .2s; }}
-              .allure-btn:hover {{ opacity: .85; color: #fff; }}
-              hr {{ border-color: #30363d; }}
-            </style>
-          </head>
-          <body>
-            <div class="container py-4">
-
-              <!-- Header -->
-              <div class="d-flex align-items-center justify-content-between mb-4">
-                <div>
-                  <h1 class="mb-1 fw-bold">🧪 Qatarat Test Dashboard</h1>
-                  <small class="text-muted">Last updated: {now} &nbsp;·&nbsp; Run #<strong>{run_num}</strong> &nbsp;·&nbsp; <code>{sha}</code></small>
-                </div>
-                <a href="allure-report/index.html" class="allure-btn">📊 Full Allure Report</a>
-              </div>
-
-              <!-- Stat cards -->
-              <div class="row g-3 mb-4">
-                <div class="col-6 col-md-3">
-                  <div class="card p-3 text-center stat-card">
-                    <div class="big-number" style="color:{status_color}">{pct}%</div>
-                    <div class="text-muted mt-1">Pass Rate {status_icon}</div>
-                  </div>
-                </div>
-                <div class="col-6 col-md-3">
-                  <div class="card p-3 text-center stat-card">
-                    <div class="big-number text-info">{total}</div>
-                    <div class="text-muted mt-1">Total Tests</div>
-                  </div>
-                </div>
-                <div class="col-6 col-md-3">
-                  <div class="card p-3 text-center stat-card">
-                    <div class="big-number text-success">{passed}</div>
-                    <div class="text-muted mt-1">Passed ✅</div>
-                  </div>
-                </div>
-                <div class="col-6 col-md-3">
-                  <div class="card p-3 text-center stat-card">
-                    <div class="big-number text-danger">{failed}</div>
-                    <div class="text-muted mt-1">Failed ❌</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Chart + table -->
-              <div class="row g-3 mb-4">
-                <div class="col-md-4">
-                  <div class="card p-3 h-100 d-flex align-items-center justify-content-center">
-                    <canvas id="donut" style="max-width:220px"></canvas>
-                  </div>
-                </div>
-                <div class="col-md-8">
-                  <div class="card p-3">
-                    <h5 class="mb-3">Suite Breakdown</h5>
-                    <div class="table-responsive">
-                      <table class="table table-sm mb-0">
-                        <thead>
-                          <tr>
-                            <th>Suite</th><th class="text-center">Total</th>
-                            <th class="text-center">Pass</th><th class="text-center">Fail</th>
-                            <th class="text-center">Skip</th><th class="text-center">Rate</th>
-                          </tr>
-                        </thead>
-                        <tbody>{rows}</tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Links -->
-              <div class="card p-3 mb-4">
-                <h5 class="mb-3">Quick Links</h5>
-                <div class="d-flex flex-wrap gap-2">
-                  <a href="allure-report/index.html" class="btn btn-sm btn-outline-light">📊 Allure Detailed Report</a>
-                  <a href="https://github.com/{repo}/actions" class="btn btn-sm btn-outline-light">⚙️ GitHub Actions</a>
-                  <a href="https://github.com/{repo}" class="btn btn-sm btn-outline-light">📁 Repository</a>
-                  <a href="https://github.com/{repo}/actions/workflows/01-maestro-smoke.yml" class="btn btn-sm btn-outline-secondary">Maestro Smoke</a>
-                  <a href="https://github.com/{repo}/actions/workflows/02-maestro-regression.yml" class="btn btn-sm btn-outline-secondary">Maestro Regression</a>
-                  <a href="https://github.com/{repo}/actions/workflows/03-appium-android.yml" class="btn btn-sm btn-outline-secondary">Appium Deep Tests</a>
-                </div>
-              </div>
-
-              <!-- Tech stack -->
-              <div class="card p-3">
-                <h5 class="mb-3">Tech Stack</h5>
-                <div class="row g-2 text-center">
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">Flutter</span><div class="small text-muted mt-1">App</div></div>
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">Maestro</span><div class="small text-muted mt-1">UI flows</div></div>
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">Appium</span><div class="small text-muted mt-1">Deep tests</div></div>
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">Python</span><div class="small text-muted mt-1">Test code</div></div>
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">Allure</span><div class="small text-muted mt-1">Reports</div></div>
-                  <div class="col-4 col-md-2"><span class="badge bg-secondary fs-6">GH Actions</span><div class="small text-muted mt-1">CI/CD</div></div>
-                </div>
-              </div>
-
-              <div class="text-center text-muted mt-4 small">
-                Qatarat Automation Suite &nbsp;·&nbsp; <a href="https://github.com/{repo}">github.com/{repo}</a>
-              </div>
-            </div>
-
-            <script>
-              new Chart(document.getElementById('donut'), {{
-                type: 'doughnut',
-                data: {{
-                  labels: ['Passed','Failed','Skipped'],
-                  datasets: [{{ data: [{passed},{failed},{skipped}], backgroundColor: ['#238636','#da3633','#8b949e'], borderWidth: 0 }}]
-                }},
-                options: {{ cutout:'72%', plugins: {{ legend: {{ labels: {{ color:'#e6edf3' }} }} }} }}
-              }});
-            </script>
-          </body>
-          </html>"""
-
-          os.makedirs("gh-pages", exist_ok=True)
-          with open("gh-pages/index.html", "w") as fh:
-              fh.write(html)
-          print("Dashboard generated.")
-          PYEOF
-
-      - name: Copy Allure report into gh-pages
-        run: |
-          cp -r allure-report/ gh-pages/allure-report/ 2>/dev/null || mkdir -p gh-pages/allure-report
+          ### Test Details
+          | Status | Test |
+          |--------|------|
+          {rows if rows else "| — | No results yet |\n"}"""
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write(summary)
+          EOF
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5

@@ -49,14 +49,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            adb install -r "Qatarat (Lambda-Stage).apk"
-            mkdir -p testing/maestro/reports
-            FAIL=0
-            for flow in 01_splash_onboarding 02_login_otp 03_guest_user 05_cart_add_items 06_checkout_payment_select; do
-              maestro test --format junit --output "testing/maestro/reports/${flow}-results.xml" "testing/maestro/flows/${flow}.yaml" || FAIL=$((FAIL+1))
-            done
-            exit $FAIL
+          script: adb install -r "Qatarat (Lambda-Stage).apk" && bash testing/run_smoke_ci.sh
 
       - name: Publish step summary
         if: always()

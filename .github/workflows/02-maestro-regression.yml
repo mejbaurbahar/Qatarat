@@ -53,23 +53,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
-          script: |
-            adb install -r "Qatarat (Lambda-Stage).apk"
-            mkdir -p testing/maestro/reports
-            FAIL=0
-            FLOW="${{ github.event.inputs.flow }}"
-            if [ -n "$FLOW" ]; then
-              FLOW_FILE=$(ls testing/maestro/flows/${FLOW}*.yaml 2>/dev/null | head -1)
-              if [ -z "$FLOW_FILE" ]; then echo "Flow $FLOW not found"; exit 1; fi
-              name=$(basename "$FLOW_FILE" .yaml)
-              maestro test --format junit --output "testing/maestro/reports/${name}-results.xml" "$FLOW_FILE" || FAIL=1
-            else
-              for flow in testing/maestro/flows/[0-9][0-9]_*.yaml; do
-                name=$(basename "$flow" .yaml)
-                maestro test --format junit --output "testing/maestro/reports/${name}-results.xml" "$flow" || FAIL=$((FAIL+1))
-              done
-            fi
-            exit $FAIL
+          script: adb install -r "Qatarat (Lambda-Stage).apk" && bash testing/run_regression_ci.sh "${{ github.event.inputs.flow }}"
 
       - name: Publish step summary
         if: always()
