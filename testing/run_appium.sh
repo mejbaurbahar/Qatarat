@@ -5,6 +5,7 @@
 #   ./run_appium.sh payment                — payment tests only
 #   ./run_appium.sh gift                   — gift card tests only
 #   ./run_appium.sh subscription           — subscription tests only
+#   ./run_appium.sh account                — profile & account tests only
 #   PLATFORM=ios ./run_appium.sh           — iOS tests
 #   DEVICE_MODE=device ./run_appium.sh     — real device
 

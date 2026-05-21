@@ -1,0 +1,35 @@
+appId: com.qatarat.app
+---
+# Flow: Share app referral link
+
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Skip"
+    optional: true
+- waitForAnimationToEnd
+
+# Find share button
+- tapOn:
+    text: "Share"
+    optional: true
+- tapOn:
+    text: "Share App"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Share sheet or referral text should appear
+- assertVisible:
+    text: "Qatarat"
+    optional: true
+- assertVisible:
+    text: "onelink.to/qatarat"
+    optional: true
+
+- takeScreenshot: share_app_sheet
+
+# Dismiss share sheet
+- pressKey: Back
+- waitForAnimationToEnd

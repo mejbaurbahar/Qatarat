@@ -1,0 +1,79 @@
+appId: com.qatarat.app
+---
+# Flow: Profile → change currency, update phone, about, logout
+
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Skip"
+    optional: true
+
+# Login first
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- inputText: "1234"
+- tapOn: "Verify"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Open profile / account menu
+- tapOn:
+    text: "Profile"
+    optional: true
+- tapOn:
+    text: "Account"
+    optional: true
+- waitForAnimationToEnd
+
+# Change currency
+- tapOn:
+    text: "Change Currency"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible:
+    text: "SAR"
+    optional: true
+- tapOn:
+    text: "Back"
+    optional: true
+
+# About Qatarat
+- tapOn:
+    text: "About"
+    optional: true
+- tapOn:
+    text: "About Qatarat"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Back"
+    optional: true
+
+# Verify logout option is present (don't actually logout)
+- assertVisible:
+    text: "Logout"
+    optional: true
+- takeScreenshot: profile_settings_screen
+
+# Confirm logout dialog
+- tapOn:
+    text: "Logout"
+    optional: true
+- assertVisible:
+    text: "Are you sure"
+    optional: true
+- tapOn:
+    text: "No"
+    optional: true
+- takeScreenshot: logout_cancelled

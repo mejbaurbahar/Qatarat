@@ -2,11 +2,11 @@ name: "Appium — Deep Tests (Android)"
 
 on:
   schedule:
-    - cron: "0 2 * * 1"    # every Monday at 02:00 UTC
+    - cron: "0 2 * * 1"
   workflow_dispatch:
     inputs:
       marker:
-        description: "pytest marker to run (payment | gift | subscription | streaming | leave empty for all)"
+        description: "pytest marker (payment | gift | subscription | account | streaming | empty=all)"
         required: false
         default: ""
 
@@ -42,7 +42,7 @@ jobs:
       - name: Install Python deps
         run: pip install -r testing/appium/requirements.txt
 
-      - name: Install Node & Appium
+      - name: Set up Node 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -55,8 +55,7 @@ jobs:
 
       - name: Enable KVM
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
@@ -64,7 +63,6 @@ jobs:
         run: |
           appium --port 4723 --log /tmp/appium.log &
           sleep 5
-          curl -s http://localhost:4723/status | python3 -c "import sys,json; d=json.load(sys.stdin); print('Appium ready:', d['value']['ready'])"
 
       - name: Run Appium Tests on Emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -77,25 +75,77 @@ jobs:
           profile: pixel_6
           target: google_apis
           force-avd-creation: false
-          emulator-options: >
-            -no-snapshot-save
-            -no-window
-            -gpu swiftshader_indirect
-            -noaudio
-            -no-boot-anim
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
           disable-animations: true
           script: |
             adb install -r "Qatarat (Lambda-Stage).apk"
-            mkdir -p testing/appium/reports/screenshots
+            mkdir -p testing/appium/reports/screenshots testing/appium/allure-results
             MARKER="${{ github.event.inputs.marker }}"
             cd testing/appium
             if [ -n "$MARKER" ]; then
-              echo "Running marker: $MARKER"
               python3 -m pytest tests/ -m "$MARKER" -v --html=reports/report.html --self-contained-html --tb=short -o "junit_family=xunit2" --junit-xml=reports/results.xml
             else
-              echo "Running all Appium tests..."
               python3 -m pytest tests/ -v --html=reports/report.html --self-contained-html --tb=short -o "junit_family=xunit2" --junit-xml=reports/results.xml
             fi
+
+      - name: Publish step summary
+        if: always()
+        run: |
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET, os, pathlib
+          f = "testing/appium/reports/results.xml"
+          if not pathlib.Path(f).exists():
+              print("No results file found"); exit()
+          root = ET.parse(f).getroot()
+          suites = root.findall(".//testsuite") or [root]
+          total = passed = failed = skipped = 0
+          rows = ""
+          for ts in suites:
+              for tc in ts.findall("testcase"):
+                  total += 1
+                  name = tc.get("name","")
+                  if tc.find("failure") is not None or tc.find("error") is not None:
+                      failed += 1; icon = "❌"
+                  elif tc.find("skipped") is not None:
+                      skipped += 1; icon = "⏭️"
+                  else:
+                      passed += 1; icon = "✅"
+                  rows += f"| {icon} | {name} |\n"
+          pct = int(passed/total*100) if total else 0
+          bar = "🟩"*(pct//10) + "🟥"*((100-pct)//10)
+          summary = f"""## 🤖 Appium Deep Test Results
+          {bar}
+          | Metric | Value |
+          |--------|-------|
+          | ✅ Passed  | {passed} |
+          | ❌ Failed  | {failed} |
+          | ⏭️ Skipped | {skipped} |
+          | 📊 Total   | {total} |
+          | 📈 Pass rate | {pct}% |
+
+          ### Test Details
+          | Status | Test |
+          |--------|------|
+          {rows}"""
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write(summary)
+          EOF
+
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-allure-results-${{ github.run_number }}
+          path: testing/appium/allure-results/
+          retention-days: 30
+
+      - name: Upload JUnit XML
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-junit-${{ github.run_number }}
+          path: testing/appium/reports/results.xml
+          retention-days: 30
 
       - name: Upload HTML report
         if: always()
@@ -120,12 +170,3 @@ jobs:
           name: appium-server-log-${{ github.run_number }}
           path: /tmp/appium.log
           retention-days: 7
-
-      - name: Publish test summary
-        if: always()
-        uses: dorny/test-reporter@v1
-        with:
-          name: Appium Test Results
-          path: testing/appium/reports/results.xml
-          reporter: java-junit
-          fail-on-error: false

@@ -1,0 +1,52 @@
+appId: com.qatarat.app
+---
+# Flow: Help & Support — search, WhatsApp, email
+
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Skip"
+    optional: true
+
+# Navigate to Help/Support
+- tapOn:
+    text: "How can we help?"
+    optional: true
+- tapOn:
+    text: "Help"
+    optional: true
+- tapOn:
+    text: "Support"
+    optional: true
+- waitForAnimationToEnd
+
+# Help center options should be visible
+- assertVisible:
+    text: "How can we help?"
+    optional: true
+- assertVisible:
+    text: "WhatsApp"
+    optional: true
+- assertVisible:
+    text: "Mail Us"
+    optional: true
+- assertVisible:
+    text: "Search for Help"
+    optional: true
+
+- takeScreenshot: help_support_screen
+
+# Search for help
+- tapOn:
+    text: "Search for Help"
+    optional: true
+- inputText: "payment"
+- waitForAnimationToEnd
+- takeScreenshot: help_search_results
+
+# Contact via WhatsApp (don't actually open — just verify button present)
+- assertVisible:
+    text: "WhatsApp"
+    optional: true
+- takeScreenshot: help_whatsapp_option

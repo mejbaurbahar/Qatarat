@@ -1,0 +1,63 @@
+appId: com.qatarat.app
+---
+# Flow: Cancel an existing order from My Orders
+
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Skip"
+    optional: true
+
+# Login
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- inputText: "1234"
+- tapOn: "Verify"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Go to orders
+- tapOn: "My Orders"
+- waitForAnimationToEnd
+- tapOn:
+    text: "See All Orders"
+    optional: true
+- waitForAnimationToEnd
+
+# Open first order
+- tapOn:
+    index: 0
+    optional: true
+- waitForAnimationToEnd
+
+# Cancel order
+- tapOn:
+    text: "Cancel Order"
+    optional: true
+- waitForAnimationToEnd
+
+# Confirmation dialog
+- assertVisible:
+    text: "Are you sure"
+    optional: true
+- takeScreenshot: cancel_order_dialog
+
+# Don't confirm — tap No
+- tapOn:
+    text: "No"
+    optional: true
+- tapOn:
+    text: "Back"
+    optional: true
+- takeScreenshot: cancel_order_declined

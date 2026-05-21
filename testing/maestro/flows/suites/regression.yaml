@@ -1,6 +1,6 @@
 appId: com.qatarat.app
 ---
-# Full regression suite — all flows (~20 min)
+# Full regression suite — all flows
 # Run: maestro test flows/suites/regression.yaml
 
 - runFlow: ../01_splash_onboarding.yaml
@@ -14,3 +14,8 @@ appId: com.qatarat.app
 - runFlow: ../09_subscription.yaml
 - runFlow: ../10_multilanguage.yaml
 - runFlow: ../11_no_internet.yaml
+- runFlow: ../12_profile_settings.yaml
+- runFlow: ../13_help_support.yaml
+- runFlow: ../14_manage_subscriptions.yaml
+- runFlow: ../15_cancel_order.yaml
+- runFlow: ../16_share_app.yaml

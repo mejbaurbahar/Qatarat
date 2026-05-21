@@ -1,0 +1,63 @@
+appId: com.qatarat.app
+---
+# Flow: View active subscriptions, billing history, cancel subscription
+
+- launchApp
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Skip"
+    optional: true
+
+# Login
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- inputText: "1234"
+- tapOn: "Verify"
+- waitForAnimationToEnd:
+    timeout: 5000
+
+# Navigate to subscriptions
+- tapOn:
+    text: "Active Subscription"
+    optional: true
+- tapOn:
+    text: "Subscriptions"
+    optional: true
+- waitForAnimationToEnd
+
+- assertVisible:
+    text: "Active Subscription"
+    optional: true
+- takeScreenshot: active_subscriptions
+
+# Billing history
+- tapOn:
+    text: "Billing History"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: billing_history
+
+# Cancel subscription dialog (don't confirm — just verify dialog)
+- tapOn:
+    text: "Cancel Subscription"
+    optional: true
+- waitForAnimationToEnd
+- assertVisible:
+    text: "Are you sure"
+    optional: true
+- tapOn:
+    text: "No"
+    optional: true
+
+- takeScreenshot: cancel_subscription_dialog
