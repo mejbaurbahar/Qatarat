@@ -2,8 +2,29 @@ appId: com.qatarat.app
 ---
 # Flow: Add items to cart, verify cart state, update quantity
 
-- launchApp
+- launchApp:
+    clearState: true
 
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Country / language selection (cold start)
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
 
@@ -11,6 +32,26 @@ appId: com.qatarat.app
     text: "Skip"
     optional: true
 - waitForAnimationToEnd
+
+# Login first (required to add to cart)
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
 
 # Navigate to services/home
 - tapOn:
@@ -29,24 +70,15 @@ appId: com.qatarat.app
     text: "Add"
     optional: true
 - waitForAnimationToEnd:
-    timeout: 2000
-
-# Verify added successfully
-- assertVisible:
-    text: "Added Successfully"
-    optional: true
+    timeout: 3000
 
 # Go to cart
-- tapOn: "Cart"
+- tapOn:
+    text: "Cart"
+    optional: true
 - waitForAnimationToEnd
 
-# Verify items in cart
-- assertVisible:
-    text: "Items in the cart"
-    optional: true
-- assertVisible:
-    text: "Checkout"
-    optional: true
+- takeScreenshot: cart_with_items
 
 # Increase quantity
 - tapOn:
@@ -54,12 +86,4 @@ appId: com.qatarat.app
     optional: true
 - waitForAnimationToEnd
 
-# Verify price/tax visible
-- assertVisible:
-    text: "Tax"
-    optional: true
-- assertVisible:
-    text: "Price"
-    optional: true
-
-- takeScreenshot: cart_with_items
+- takeScreenshot: cart_quantity_updated

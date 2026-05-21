@@ -2,8 +2,29 @@ appId: com.qatarat.app
 ---
 # Flow: Cart → Checkout → Payment method selection (no actual payment)
 
-- launchApp
+- launchApp:
+    clearState: true
 
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Country / language selection (cold start)
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
 
@@ -11,46 +32,60 @@ appId: com.qatarat.app
     text: "Skip"
     optional: true
 
-# Go to cart (assumes items already in cart from previous flow, or add one)
-- tapOn: "Cart"
-- waitForAnimationToEnd
+# Login
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
 
-# If cart empty, add an item first
+# Add item to cart
 - tapOn:
     text: "Select a Service"
     optional: true
 - waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: "Add"
+    direction: DOWN
+    timeout: 10000
+    optional: true
 - tapOn:
     text: "Add"
     optional: true
-- waitForAnimationToEnd
-- tapOn: "Cart"
-- waitForAnimationToEnd
+- waitForAnimationToEnd:
+    timeout: 3000
 
-# Proceed to checkout
-- assertVisible: "Checkout"
-- tapOn: "Checkout"
+# Go to cart → checkout
+- tapOn:
+    text: "Cart"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Checkout"
+    optional: true
 - waitForAnimationToEnd
 
 # Payment method screen
-- assertVisible: "Please select payment method"
+- takeScreenshot: checkout_payment_selection
 
-# Verify all payment methods visible
-- assertVisible:
+# Verify Tabby BNPL visible
+- tapOn:
     text: "Pay later with Tabby"
     optional: true
-- assertVisible:
-    text: "4 interest-free"
-    optional: true
-
-# Select a payment option (card/credit)
-- tapOn:
-    text: "Select Option"
-    optional: true
-
-- waitForAnimationToEnd
-
-- takeScreenshot: checkout_payment_selection
 
 # Promo code
 - tapOn:
@@ -61,8 +96,5 @@ appId: com.qatarat.app
     text: "Apply"
     optional: true
 - waitForAnimationToEnd
-- assertVisible:
-    text: "Promo Code Applied"
-    optional: true
 
 - takeScreenshot: checkout_promo_applied

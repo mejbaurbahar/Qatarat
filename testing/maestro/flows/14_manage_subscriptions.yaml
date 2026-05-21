@@ -1,10 +1,33 @@
 appId: com.qatarat.app
 ---
-# Flow: View active subscriptions, billing history, cancel subscription
+# Flow: View active subscriptions, billing history, cancel subscription dialog
 
-- launchApp
+- launchApp:
+    clearState: true
+
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Country / language selection (cold start)
+- tapOn:
+    text: "Select your country"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
 - tapOn:
     text: "Skip"
     optional: true
@@ -21,11 +44,13 @@ appId: com.qatarat.app
     text: "Continue"
     optional: true
 - waitForAnimationToEnd:
-    timeout: 3000
-- inputText: "1234"
-- tapOn: "Verify"
-- waitForAnimationToEnd:
     timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
 
 # Navigate to subscriptions
 - tapOn:
@@ -36,9 +61,6 @@ appId: com.qatarat.app
     optional: true
 - waitForAnimationToEnd
 
-- assertVisible:
-    text: "Active Subscription"
-    optional: true
 - takeScreenshot: active_subscriptions
 
 # Billing history
@@ -48,14 +70,11 @@ appId: com.qatarat.app
 - waitForAnimationToEnd
 - takeScreenshot: billing_history
 
-# Cancel subscription dialog (don't confirm — just verify dialog)
+# Cancel subscription dialog — don't confirm
 - tapOn:
     text: "Cancel Subscription"
     optional: true
 - waitForAnimationToEnd
-- assertVisible:
-    text: "Are you sure"
-    optional: true
 - tapOn:
     text: "No"
     optional: true

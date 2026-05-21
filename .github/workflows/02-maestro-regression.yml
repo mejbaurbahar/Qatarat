@@ -18,7 +18,7 @@ jobs:
   regression:
     name: Full Regression (Android API 33)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -43,7 +43,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Run Regression Suite on Emulator
+      - name: Run Regression Flows on Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -56,35 +56,44 @@ jobs:
           script: |
             adb install -r "Qatarat (Lambda-Stage).apk"
             mkdir -p testing/maestro/reports
+            FAIL=0
             FLOW="${{ github.event.inputs.flow }}"
             if [ -n "$FLOW" ]; then
               FLOW_FILE=$(ls testing/maestro/flows/${FLOW}*.yaml 2>/dev/null | head -1)
-              maestro test --format junit --output testing/maestro/reports/regression-results.xml "$FLOW_FILE"
+              if [ -z "$FLOW_FILE" ]; then echo "Flow $FLOW not found"; exit 1; fi
+              name=$(basename "$FLOW_FILE" .yaml)
+              maestro test --format junit --output "testing/maestro/reports/${name}-results.xml" "$FLOW_FILE" || FAIL=1
             else
-              maestro test --format junit --output testing/maestro/reports/regression-results.xml testing/maestro/flows/suites/regression.yaml
+              for flow in testing/maestro/flows/[0-9][0-9]_*.yaml; do
+                name=$(basename "$flow" .yaml)
+                maestro test --format junit --output "testing/maestro/reports/${name}-results.xml" "$flow" || FAIL=$((FAIL+1))
+              done
             fi
+            exit $FAIL
 
       - name: Publish step summary
         if: always()
         run: |
           python3 - <<'EOF'
-          import xml.etree.ElementTree as ET, os, pathlib
-          f = "testing/maestro/reports/regression-results.xml"
-          if not pathlib.Path(f).exists():
-              print("No results file found"); exit()
-          root = ET.parse(f).getroot()
-          suites = root.findall(".//testsuite") or [root]
+          import xml.etree.ElementTree as ET, os, glob
+          xmls = glob.glob("testing/maestro/reports/*-results.xml")
           total = passed = failed = 0
           rows = ""
-          for ts in suites:
-              for tc in ts.findall("testcase"):
-                  total += 1
-                  name = tc.get("name","")
-                  if tc.find("failure") is not None or tc.find("error") is not None:
-                      failed += 1; icon = "❌"
-                  else:
-                      passed += 1; icon = "✅"
-                  rows += f"| {icon} | {name} |\n"
+          for xml_path in sorted(xmls):
+              try:
+                  root = ET.parse(xml_path).getroot()
+                  suites = root.findall(".//testsuite") or [root]
+                  for ts in suites:
+                      for tc in ts.findall("testcase"):
+                          total += 1
+                          name = tc.get("name", os.path.basename(xml_path).replace("-results.xml",""))
+                          if tc.find("failure") is not None or tc.find("error") is not None:
+                              failed += 1; icon = "❌"
+                          else:
+                              passed += 1; icon = "✅"
+                          rows += f"| {icon} | {name} |\n"
+              except Exception as e:
+                  print(f"Warning: {xml_path}: {e}")
           pct = int(passed/total*100) if total else 0
           bar = "🟩"*(pct//10) + "🟥"*((100-pct)//10)
           summary = f"""## 🧪 Maestro Regression Results
@@ -109,7 +118,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: maestro-regression-junit-${{ github.run_number }}
-          path: testing/maestro/reports/regression-results.xml
+          path: testing/maestro/reports/*.xml
           retention-days: 30
 
       - name: Upload screenshots

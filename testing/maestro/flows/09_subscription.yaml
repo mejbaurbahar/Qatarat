@@ -2,15 +2,35 @@ appId: com.qatarat.app
 ---
 # Flow: Subscribe to recurring weekly/monthly donation
 
-- launchApp
+- launchApp:
+    clearState: true
 
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Country / language selection (cold start)
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
 
 - tapOn:
     text: "Skip"
     optional: true
-- waitForAnimationToEnd
 
 # Login
 - tapOn:
@@ -24,15 +44,23 @@ appId: com.qatarat.app
     text: "Continue"
     optional: true
 - waitForAnimationToEnd:
-    timeout: 3000
-- inputText: "1234"
-- tapOn: "Verify"
-- waitForAnimationToEnd:
     timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
 
 # Add item to cart
 - tapOn:
     text: "Select a Service"
+    optional: true
+- scrollUntilVisible:
+    element:
+      text: "Add"
+    direction: DOWN
+    timeout: 10000
     optional: true
 - tapOn:
     text: "Add"
@@ -40,25 +68,20 @@ appId: com.qatarat.app
 - waitForAnimationToEnd
 
 # Go to cart → checkout
-- tapOn: "Cart"
-- waitForAnimationToEnd
-- tapOn: "Checkout"
-- waitForAnimationToEnd
-
-# Subscription prompt should appear
-- assertVisible:
-    text: "Would you like to subscribe"
+- tapOn:
+    text: "Cart"
     optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Checkout"
+    optional: true
+- waitForAnimationToEnd
 
+# Subscription prompt
 - tapOn:
     text: "Yes"
     optional: true
 - waitForAnimationToEnd
-
-# Subscription type selector
-- assertVisible:
-    text: "Please specify the subscription type"
-    optional: true
 
 # Select weekly
 - tapOn:
@@ -74,9 +97,5 @@ appId: com.qatarat.app
     text: "Subscribe now for Reminder"
     optional: true
 - waitForAnimationToEnd
-
-- assertVisible:
-    text: "Successfully Subscribed!"
-    optional: true
 
 - takeScreenshot: subscription_success

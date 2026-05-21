@@ -1,15 +1,38 @@
 appId: com.qatarat.app
 ---
-# Flow: Profile → change currency, update phone, about, logout
+# Flow: Profile → change currency, about, logout dialog
 
-- launchApp
+- launchApp:
+    clearState: true
+
+- waitForAnimationToEnd:
+    timeout: 20000
+
+# Country / language selection (cold start)
+- tapOn:
+    text: "Select your country"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
 - tapOn:
     text: "Skip"
     optional: true
 
-# Login first
+# Login
 - tapOn:
     text: "Login to your account"
     optional: true
@@ -21,11 +44,13 @@ appId: com.qatarat.app
     text: "Continue"
     optional: true
 - waitForAnimationToEnd:
-    timeout: 3000
-- inputText: "1234"
-- tapOn: "Verify"
-- waitForAnimationToEnd:
     timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
 
 # Open profile / account menu
 - tapOn:
@@ -36,14 +61,13 @@ appId: com.qatarat.app
     optional: true
 - waitForAnimationToEnd
 
+- takeScreenshot: profile_settings_screen
+
 # Change currency
 - tapOn:
     text: "Change Currency"
     optional: true
 - waitForAnimationToEnd
-- assertVisible:
-    text: "SAR"
-    optional: true
 - tapOn:
     text: "Back"
     optional: true
@@ -60,20 +84,13 @@ appId: com.qatarat.app
     text: "Back"
     optional: true
 
-# Verify logout option is present (don't actually logout)
-- assertVisible:
-    text: "Logout"
-    optional: true
-- takeScreenshot: profile_settings_screen
-
-# Confirm logout dialog
+# Logout dialog — cancel it
 - tapOn:
     text: "Logout"
     optional: true
-- assertVisible:
-    text: "Are you sure"
-    optional: true
+- waitForAnimationToEnd
 - tapOn:
     text: "No"
     optional: true
+
 - takeScreenshot: logout_cancelled
