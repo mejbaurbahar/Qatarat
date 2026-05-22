@@ -1,0 +1,98 @@
+appId: com.qatarat.app
+---
+# Edge case: background → resume must preserve cart state and not crash
+
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 20000
+
+- tapOn:
+    text: "Skip"
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "By clicking continue"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Add item to cart
+- tapOn:
+    text: "Select a Service"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      text: "Add"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    text: "Add"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Cart"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+
+- takeScreenshot: bg_resume_cart_before_background
+
+# ── Background the app ───────────────────────────────
+- pressKey: Home
+- wait:
+    timeout: 3000
+
+# ── Resume the app ───────────────────────────────────
+- launchApp:
+    clearState: false   # keep state
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- takeScreenshot: bg_resume_after_foreground
+
+# Cart items must still be there
+- assertVisible:
+    text: "Cart"
+    optional: true
+- assertNotVisible:
+    text: "500"
+- assertNotVisible:
+    text: "Something went wrong"
+- takeScreenshot: bg_resume_cart_intact

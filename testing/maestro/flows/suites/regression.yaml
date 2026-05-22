@@ -19,3 +19,12 @@ appId: com.qatarat.app
 - runFlow: ../14_manage_subscriptions.yaml
 - runFlow: ../15_cancel_order.yaml
 - runFlow: ../16_share_app.yaml
+
+# Negative & boundary flows
+- runFlow: ../17_login_invalid_phone.yaml
+- runFlow: ../18_login_wrong_otp.yaml
+- runFlow: ../19_invalid_promo.yaml
+- runFlow: ../20_empty_cart_checkout.yaml
+- runFlow: ../21_gift_card_validation.yaml
+- runFlow: ../22_cart_quantity_boundary.yaml
+- runFlow: ../23_app_background_resume.yaml

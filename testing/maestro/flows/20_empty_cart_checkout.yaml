@@ -1,0 +1,73 @@
+appId: com.qatarat.app
+---
+# Negative: attempting checkout with an empty cart must be blocked
+
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 20000
+
+- tapOn:
+    text: "Skip"
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "By clicking continue"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Open the cart directly (empty)
+- tapOn:
+    text: "Cart"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- takeScreenshot: cart_empty_state
+
+# Attempt to checkout — should be blocked
+- tapOn:
+    text: "Checkout"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+
+# Payment selection must NOT appear
+- assertNotVisible:
+    text: "Please select payment method"
+- takeScreenshot: empty_cart_checkout_blocked

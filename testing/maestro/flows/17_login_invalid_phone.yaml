@@ -1,0 +1,89 @@
+appId: com.qatarat.app
+---
+# Negative: invalid phone numbers must be rejected — OTP screen must NOT appear
+
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 20000
+
+- tapOn:
+    text: "Skip"
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- tapOn:
+    text: "Login to your account"
+    optional: true
+
+# ── Test 1: empty phone ───────────────────────────────
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertNotVisible:
+    text: "Enter OTP"
+- takeScreenshot: login_empty_phone_blocked
+
+# ── Test 2: too-short phone (3 digits) ───────────────
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- clearKeychain
+- inputText: "123"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertNotVisible:
+    text: "Enter OTP"
+- takeScreenshot: login_short_phone_blocked
+
+# ── Test 3: alphabetic phone ─────────────────────────
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- clearKeychain
+- inputText: "abcdefghij"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertNotVisible:
+    text: "Enter OTP"
+- takeScreenshot: login_alpha_phone_blocked
+
+# ── Test 4: special-character phone ──────────────────
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- clearKeychain
+- inputText: "+880@abc#123"
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 3000
+- assertNotVisible:
+    text: "Enter OTP"
+- takeScreenshot: login_special_phone_blocked

@@ -1,0 +1,12 @@
+appId: com.qatarat.app
+---
+# Negative & boundary test suite — all invalid-data and edge-case flows
+# Run: maestro test flows/suites/negative.yaml
+
+- runFlow: ../17_login_invalid_phone.yaml
+- runFlow: ../18_login_wrong_otp.yaml
+- runFlow: ../19_invalid_promo.yaml
+- runFlow: ../20_empty_cart_checkout.yaml
+- runFlow: ../21_gift_card_validation.yaml
+- runFlow: ../22_cart_quantity_boundary.yaml
+- runFlow: ../23_app_background_resume.yaml

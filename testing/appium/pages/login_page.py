@@ -53,6 +53,13 @@ class LoginPage(BasePage):
         wait_for_animation(self.driver, 3)
         return self
 
+    def login_phone_only(self, phone="8801685220417"):
+        """Enter phone and tap Continue but stop before OTP. Used by negative OTP tests."""
+        self.enter_phone(phone)
+        self.accept_terms()
+        self.tap_continue()
+        return self
+
     def login(self, phone="8801685220417", otp="1234"):
         self.select_country_and_language()
         self.skip_onboarding()

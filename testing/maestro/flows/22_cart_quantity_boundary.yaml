@@ -1,0 +1,113 @@
+appId: com.qatarat.app
+---
+# Boundary: cart quantity — increment many times, decrement to 0, verify no NaN/crash
+
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 20000
+
+- tapOn:
+    text: "Skip"
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Select your country"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- tapOn:
+    text: "Saudi Arabia"
+    optional: true
+- tapOn:
+    text: "Select your language"
+    optional: true
+- tapOn:
+    text: "English"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+
+- tapOn:
+    text: "Login to your account"
+    optional: true
+- tapOn:
+    text: "Enter phone number"
+    optional: true
+- inputText: "8801685220417"
+- tapOn:
+    text: "By clicking continue"
+    optional: true
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- inputText: "1234"
+- tapOn:
+    text: "Verify"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
+
+# Add item to cart
+- tapOn:
+    text: "Select a Service"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 5000
+- scrollUntilVisible:
+    element:
+      text: "Add"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    text: "Add"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Cart"
+    optional: true
+- waitForAnimationToEnd
+
+- takeScreenshot: cart_qty_initial
+
+# ── Increment quantity 10 times ──────────────────────
+- repeat:
+    times: 10
+    commands:
+      - tapOn:
+          text: "+"
+          optional: true
+      - waitForAnimationToEnd:
+          timeout: 500
+- takeScreenshot: cart_qty_after_10_increments
+- assertNotVisible:
+    text: "NaN"
+- assertNotVisible:
+    text: "Something went wrong"
+
+# ── Decrement back to 1 ──────────────────────────────
+- repeat:
+    times: 10
+    commands:
+      - tapOn:
+          text: "-"
+          optional: true
+      - waitForAnimationToEnd:
+          timeout: 500
+- takeScreenshot: cart_qty_back_to_one
+
+# ── Decrement at quantity 1 (expect removal or confirm dialog) ──
+- tapOn:
+    text: "-"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 2000
+- takeScreenshot: cart_qty_decrement_below_one
+# The app must show empty state or a removal confirmation — not crash
+- assertNotVisible:
+    text: "500"
+- assertNotVisible:
+    text: "Exception"
