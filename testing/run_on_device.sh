@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-#   Qatarat — USB Device Test Runner  (Android & iOS)
-#   Connect your phone via USB and run any test suite.
-#   No emulator, no setup knowledge needed.
+#   Qatarat — Wireless Device Test Runner
+#   Run all 25 Maestro flows on a REAL device — no USB, no emulator.
+#   WiFi only.  Tests run in the background; terminal stays free.
 # ═══════════════════════════════════════════════════════════════════
 
-set -e
+set -euo pipefail
 
 # ── Colours ─────────────────────────────────────────────────────────
 BOLD='\033[1m';    RESET='\033[0m'
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 RED='\033[0;31m';   CYAN='\033[0;36m'
 BLUE='\033[0;34m';  DIM='\033[2m'
+MAGENTA='\033[0;35m'
 
 log()     { echo -e "${GREEN}${BOLD}[✓]${RESET} $1"; }
 warn()    { echo -e "${YELLOW}${BOLD}[!]${RESET} $1"; }
-error()   { echo -e "${RED}${BOLD}[✗]${RESET} $1"; }
+error()   { echo -e "${RED}${BOLD}[✗]${RESET} $1" >&2; }
 step()    { echo -e "\n${CYAN}${BOLD}▶  $1${RESET}"; }
+info()    { echo -e "  ${DIM}$1${RESET}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLOWS_DIR="$SCRIPT_DIR/maestro/flows"
+REPORTS_DIR="$SCRIPT_DIR/reports/maestro"
 APK_PATH="$SCRIPT_DIR/../Qatarat (Lambda-Stage).apk"
+REPORT_TS=$(date +%Y%m%d-%H%M%S)
+LOG_FILE="$REPORTS_DIR/run_${REPORT_TS}.log"
 
 # ── PATH setup ──────────────────────────────────────────────────────
-if [ -z "$JAVA_HOME" ]; then
-  if   [ -d "/opt/homebrew/opt/openjdk@17" ]; then JAVA_HOME="/opt/homebrew/opt/openjdk@17"
-  elif [ -d "/usr/local/opt/openjdk@17" ];    then JAVA_HOME="/usr/local/opt/openjdk@17"
-  elif command -v java &>/dev/null;            then JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(which java)")")")"
-  fi
-fi
-if [ -z "$ANDROID_HOME" ]; then
-  if   [ -d "$HOME/Library/Android/sdk" ]; then ANDROID_HOME="$HOME/Library/Android/sdk"
-  elif [ -d "$HOME/Android/sdk" ];          then ANDROID_HOME="$HOME/Android/sdk"
-  fi
-fi
-export JAVA_HOME ANDROID_HOME
+for _java in /opt/homebrew/opt/openjdk@17 /usr/local/opt/openjdk@17; do
+  [ -d "$_java" ] && { export JAVA_HOME="$_java"; break; }
+done
+for _sdk in "$HOME/Library/Android/sdk" "$HOME/Android/sdk" "$HOME/.qatarat-android-sdk"; do
+  [ -d "$_sdk" ] && { export ANDROID_HOME="$_sdk"; break; }
+done
 export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$HOME/.maestro/bin:${ANDROID_HOME:+$ANDROID_HOME/platform-tools:}/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 # ── Banner ──────────────────────────────────────────────────────────
@@ -47,177 +47,207 @@ echo "  ██║  ██║██╔══██║   ██║   ██╔═�
 echo "  ██████╔╝██║  ██║   ██║   ██║  ██║██║  ██║██║  ██║   ██║   "
 echo "  ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝   "
 echo -e "${RESET}"
-echo -e "  ${BOLD}Qatarat (قطرات) — Mobile Test Runner${RESET}"
-echo -e "  ${DIM}Android & iOS USB Device Edition${RESET}"
+echo -e "  ${BOLD}Qatarat (قطرات) — Wireless Test Runner${RESET}"
+echo -e "  ${DIM}Real device · No USB · No emulator · Runs in background${RESET}"
 echo ""
 echo "  ─────────────────────────────────────────────────────────"
 echo ""
 
-# ── Platform selection ──────────────────────────────────────────────
-echo -e "  ${BOLD}Which device are you testing on?${RESET}"
-echo ""
-echo -e "  ${BOLD}  1)${RESET} Android phone"
-echo -e "  ${BOLD}  2)${RESET} iPhone (iOS)"
-echo ""
-read -p "  Enter choice [1 or 2]: " PLATFORM_CHOICE
-case "$PLATFORM_CHOICE" in
-  2) PLATFORM="ios"     ;;
-  *) PLATFORM="android" ;;
-esac
-echo ""
-
-# ── Prerequisites check ─────────────────────────────────────────────
+# ── Prerequisites ───────────────────────────────────────────────────
 step "Checking tools..."
-
 MISSING=()
-command -v java    &>/dev/null || MISSING+=("Java 17  →  run: cd testing && ./install.sh")
-command -v maestro &>/dev/null || MISSING+=("Maestro  →  run: cd testing && ./install.sh")
-
-if [ "$PLATFORM" = "android" ]; then
-  command -v adb &>/dev/null || MISSING+=("ADB      →  run: cd testing && ./install.sh")
-else
-  # iOS needs Xcode CLI tools (for xcrun) — ship with Xcode, free
-  if ! command -v xcrun &>/dev/null; then
-    MISSING+=("Xcode CLI tools  →  run: xcode-select --install")
-  fi
-  # idb-companion — Maestro uses this to talk to iOS devices
-  if ! command -v idb_companion &>/dev/null; then
-    warn "idb-companion not found — installing via Homebrew (required for Maestro on iOS)..."
-    if command -v brew &>/dev/null; then
-      brew install facebook/fb/idb-companion 2>/dev/null || \
-        warn "idb-companion install failed — try: brew install facebook/fb/idb-companion"
-    else
-      MISSING+=("idb-companion  →  brew install facebook/fb/idb-companion")
-    fi
-  fi
-fi
+command -v adb     &>/dev/null || MISSING+=(adb)
+command -v maestro &>/dev/null || MISSING+=(maestro)
 
 if [ ${#MISSING[@]} -gt 0 ]; then
-  error "Missing tools:"
-  for m in "${MISSING[@]}"; do echo -e "    ${RED}•${RESET} $m"; done
+  error "Missing: ${MISSING[*]}"
   echo ""
-  if [ "$PLATFORM" = "android" ]; then
-    read -p "  Run install.sh now? (y/n): " DO_INSTALL
-    if [[ "$DO_INSTALL" =~ ^[Yy]$ ]]; then
-      "$SCRIPT_DIR/install.sh"
-      source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
-    else
-      exit 1
-    fi
-  else
-    exit 1
-  fi
+  echo -e "  Install with:  ${CYAN}cd testing && bash install.sh${RESET}"
+  exit 1
 fi
-log "All tools found"
+log "adb + maestro found"
+
+# ── Platform selection ───────────────────────────────────────────────
+echo ""
+echo -e "  ${BOLD}Which device platform?${RESET}"
+echo ""
+echo -e "  ${BOLD}  1)${RESET} Android"
+echo -e "  ${BOLD}  2)${RESET} iPhone (iOS)"
+echo ""
+read -rp "  Enter choice [1 or 2, default=1]: " PLATFORM_CHOICE
+PLATFORM_CHOICE="${PLATFORM_CHOICE:-1}"
+case "$PLATFORM_CHOICE" in
+  2) PLATFORM="ios" ;;
+  *) PLATFORM="android" ;;
+esac
 
 # ═══════════════════════════════════════════════════════════════════
-#   ANDROID PATH
+#   ANDROID — WiFi connection
 # ═══════════════════════════════════════════════════════════════════
 if [ "$PLATFORM" = "android" ]; then
 
-  # ── APK check ─────────────────────────────────────────────────────
-  if [ ! -f "$APK_PATH" ]; then
-    error "APK not found at: $APK_PATH"
-    echo "  Put 'Qatarat (Lambda-Stage).apk' in the project root folder."
-    exit 1
-  fi
-  APK_SIZE=$(du -sh "$APK_PATH" | cut -f1)
-  log "APK found ($APK_SIZE)"
-
-  # ── Android device detection ───────────────────────────────────────
-  step "Looking for a connected Android device..."
   echo ""
-  echo -e "  ${YELLOW}How to enable USB Debugging:${RESET}"
-  echo -e "  ${DIM}1. Settings → About Phone → tap 'Build Number' 7 times${RESET}"
-  echo -e "  ${DIM}2. Settings → Developer Options → enable 'USB Debugging'${RESET}"
-  echo -e "  ${DIM}3. Connect phone via USB cable (data cable, not charge-only)${RESET}"
-  echo -e "  ${DIM}4. Unlock phone and tap 'Allow' on the USB Debugging dialog${RESET}"
+  echo "  ─────────────────────────────────────────────────────────"
+  echo -e "  ${BOLD}How do you want to connect?${RESET}  (no USB required)"
+  echo "  ─────────────────────────────────────────────────────────"
   echo ""
-
-  printf "  Resetting ADB server..."
-  adb kill-server 2>/dev/null; adb start-server 2>/dev/null
-  echo -e " ${DIM}done${RESET}"
+  echo -e "  ${BOLD}  1)${RESET} ${GREEN}WiFi — Android 11+ Wireless Debugging${RESET}"
+  echo -e "     ${DIM}Settings → Developer Options → Wireless debugging${RESET}"
+  echo -e "     ${DIM}Tap 'Pair device with pairing code' → enter IP:port + code${RESET}"
+  echo ""
+  echo -e "  ${BOLD}  2)${RESET} ${CYAN}WiFi — Enter device IP directly${RESET}"
+  echo -e "     ${DIM}Developer Options → enable 'ADB over network' or 'Wireless debugging'${RESET}"
+  echo -e "     ${DIM}Then just enter the IP shown on that screen${RESET}"
+  echo ""
+  echo -e "  ${BOLD}  3)${RESET} USB cable"
+  echo ""
+  read -rp "  Enter choice [1/2/3, default=1]: " CONN_CHOICE
+  CONN_CHOICE="${CONN_CHOICE:-1}"
   echo ""
 
-  MAX_WAIT=90; WAIT=0; DEVICE_ID=""; LAST_STATE=""
+  case "$CONN_CHOICE" in
 
-  while [ $WAIT -lt $MAX_WAIT ]; do
-    RAW=$(adb devices 2>/dev/null | tail -n +2 | grep -v "^$" || true)
-    DEVICE_LINE=$(echo "$RAW" | grep "device$" | head -1)
-    if [ -n "$DEVICE_LINE" ]; then
-      DEVICE_ID=$(echo "$DEVICE_LINE" | awk '{print $1}')
-      break
-    fi
-    UNAUTH=$(echo "$RAW" | grep "unauthorized" | head -1)
-    if [ -n "$UNAUTH" ]; then
-      UNAUTH_ID=$(echo "$UNAUTH" | awk '{print $1}')
-      if [ "$LAST_STATE" != "unauth:$UNAUTH_ID" ]; then
-        echo ""
-        echo -e "  ${YELLOW}${BOLD}[!]${RESET} Phone detected (${UNAUTH_ID}) but not authorized yet."
-        echo -e "  ${BOLD}    → Unlock your phone and tap 'Allow' on the USB Debugging dialog.${RESET}"
-        LAST_STATE="unauth:$UNAUTH_ID"
+    # ── Wireless Debugging — Android 11+ ──────────────────────────
+    1)
+      echo -e "  ${YELLOW}${BOLD}Steps on your Android phone:${RESET}"
+      echo ""
+      echo -e "  ${CYAN}1.${RESET} Settings  →  About phone  →  tap 'Build number' 7 times"
+      echo -e "  ${CYAN}2.${RESET} Settings  →  Developer options  →  Wireless debugging  →  toggle ON"
+      echo -e "  ${CYAN}3.${RESET} Tap ${BOLD}'Pair device with pairing code'${RESET}"
+      echo -e "     It shows a popup with:  ${BOLD}IP address & Port${RESET}  and a  ${BOLD}6-digit code${RESET}"
+      echo ""
+      read -rp "  Enter IP:port from popup (e.g. 192.168.1.5:39753): " PAIR_ADDR
+      read -rp "  Enter 6-digit pairing code: " PAIR_CODE
+      echo ""
+      step "Pairing device..."
+      if adb pair "$PAIR_ADDR" "$PAIR_CODE"; then
+        log "Paired successfully"
+      else
+        error "Pairing failed — make sure IP:port and code match exactly"
+        exit 1
       fi
-    else
-      printf "\r  ${YELLOW}Waiting for device...${RESET} ${DIM}${WAIT}s / ${MAX_WAIT}s${RESET}   "
-      LAST_STATE="none"
-    fi
-    sleep 2; WAIT=$((WAIT + 2))
-  done
-  echo ""
+      echo ""
+      echo -e "  ${DIM}Now go back to the 'Wireless debugging' main screen.${RESET}"
+      echo -e "  ${DIM}It shows a second  IP:port  (the one used for connecting — often port 5555).${RESET}"
+      echo ""
+      WIFI_IP="${PAIR_ADDR%%:*}"
+      read -rp "  Enter the IP:port from the Wireless debugging main screen (e.g. 192.168.1.5:5555): " CONN_ADDR
+      CONN_ADDR="${CONN_ADDR:-$WIFI_IP:5555}"
+      step "Connecting to $CONN_ADDR..."
+      if adb connect "$CONN_ADDR"; then
+        log "Connected to $CONN_ADDR"
+        DEVICE_TARGET="$CONN_ADDR"
+      else
+        error "Connection failed — check that Wireless debugging is still ON on the device"
+        exit 1
+      fi
+      ;;
 
-  if [ -z "$DEVICE_ID" ]; then
-    error "No device found after ${MAX_WAIT}s."
+    # ── Enter IP directly ─────────────────────────────────────────
+    2)
+      echo -e "  ${YELLOW}${BOLD}Enable on your phone first:${RESET}"
+      echo -e "  ${DIM}  Option A: Settings → Developer options → 'ADB over network' → toggle ON${RESET}"
+      echo -e "  ${DIM}  Option B: Settings → Developer options → Wireless debugging → toggle ON${RESET}"
+      echo -e "  ${DIM}  The IP address is shown on that page.${RESET}"
+      echo ""
+      read -rp "  Enter device IP address (e.g. 192.168.1.42): " WIFI_IP
+      read -rp "  Port [default 5555]: " WIFI_PORT
+      WIFI_PORT="${WIFI_PORT:-5555}"
+      CONN_ADDR="$WIFI_IP:$WIFI_PORT"
+      step "Connecting to $CONN_ADDR..."
+      if adb connect "$CONN_ADDR"; then
+        log "Connected to $CONN_ADDR"
+        DEVICE_TARGET="$CONN_ADDR"
+      else
+        error "Cannot reach $CONN_ADDR — is the device on the same WiFi network?"
+        echo ""
+        echo -e "  ${DIM}Tip: device must be on the same LAN as this computer.${RESET}"
+        echo -e "  ${DIM}Check: ping $WIFI_IP${RESET}"
+        exit 1
+      fi
+      ;;
+
+    # ── USB ───────────────────────────────────────────────────────
+    3)
+      step "Waiting for USB device..."
+      echo ""
+      echo -e "  ${DIM}Settings → About phone → tap 'Build number' 7 times${RESET}"
+      echo -e "  ${DIM}Settings → Developer options → enable 'USB debugging'${RESET}"
+      echo -e "  ${DIM}Connect USB cable → tap 'Allow' on the phone${RESET}"
+      echo ""
+      adb kill-server 2>/dev/null; adb start-server 2>/dev/null
+      MAX_WAIT=90; WAIT=0; DEVICE_TARGET=""; LAST_STATE=""
+      while [ $WAIT -lt $MAX_WAIT ]; do
+        RAW=$(adb devices 2>/dev/null | tail -n +2 | grep -v "^$" || true)
+        DEVICE_LINE=$(echo "$RAW" | grep "device$" | head -1)
+        if [ -n "$DEVICE_LINE" ]; then
+          DEVICE_TARGET=$(echo "$DEVICE_LINE" | awk '{print $1}')
+          break
+        fi
+        UNAUTH=$(echo "$RAW" | grep "unauthorized" | head -1)
+        if [ -n "$UNAUTH" ] && [ "$LAST_STATE" != "unauth" ]; then
+          echo -e "  ${YELLOW}${BOLD}[!]${RESET} Phone detected but not authorized — tap 'Allow' on the USB Debugging dialog"
+          LAST_STATE="unauth"
+        else
+          printf "\r  Waiting for device... %ds / %ds   " "$WAIT" "$MAX_WAIT"
+          LAST_STATE="none"
+        fi
+        sleep 2; WAIT=$((WAIT + 2))
+      done
+      echo ""
+      [ -z "$DEVICE_TARGET" ] && { error "No device found after ${MAX_WAIT}s."; exit 1; }
+      log "USB device found: $DEVICE_TARGET"
+      ;;
+
+    *)
+      error "Invalid choice"; exit 1 ;;
+  esac
+
+  # ── Pick if multiple devices ─────────────────────────────────────
+  # (may have USB + WiFi both connected)
+  DEVICE_LIST=$(adb devices 2>/dev/null | tail -n +2 | grep "device$" || true)
+  DEVICE_COUNT=$(echo "$DEVICE_LIST" | grep -c "device$" || true)
+  if [ "$DEVICE_COUNT" -gt 1 ]; then
     echo ""
-    echo -e "  ${BOLD}Common fixes:${RESET}"
-    echo -e "  ${CYAN}•${RESET} Swap the USB cable — charge-only cables have no data pins"
-    echo -e "  ${CYAN}•${RESET} Try a different USB port"
-    echo -e "  ${CYAN}•${RESET} Unlock phone and check for the 'Allow USB Debugging' popup"
-    echo -e "  ${CYAN}•${RESET} Developer Options → Revoke USB debugging authorizations → reconnect"
-    echo -e "  ${CYAN}•${RESET} Samsung only: also enable 'Install via USB' in Developer Options"
-    echo -e "  ${CYAN}•${RESET} Run: ${CYAN}adb kill-server && adb start-server && adb devices${RESET}"
-    exit 1
+    warn "Multiple devices detected — please choose one:"
+    echo ""
+    i=1
+    declare -a SERIALS
+    while IFS= read -r line; do
+      SER=$(echo "$line" | awk '{print $1}')
+      MOD=$(adb -s "$SER" shell getprop ro.product.model 2>/dev/null | tr -d '\r' || echo "?")
+      SERIALS+=("$SER")
+      echo -e "  ${BOLD}  $i)${RESET} $SER  ${DIM}($MOD)${RESET}"
+      ((i++))
+    done <<< "$DEVICE_LIST"
+    echo ""
+    read -rp "  Choose device [1-$((i-1))]: " SEL
+    DEVICE_TARGET="${SERIALS[$((SEL-1))]}"
   fi
 
-  DEVICE_MODEL=$(adb -s "$DEVICE_ID" shell getprop ro.product.model   2>/dev/null | tr -d '\r')
-  DEVICE_VER=$(  adb -s "$DEVICE_ID" shell getprop ro.build.version.release 2>/dev/null | tr -d '\r')
-  DEVICE_BRAND=$(adb -s "$DEVICE_ID" shell getprop ro.product.brand   2>/dev/null | tr -d '\r')
-  log "Device connected!"
+  # ── Device info ──────────────────────────────────────────────────
+  DEVICE_MODEL=$(adb -s "$DEVICE_TARGET" shell getprop ro.product.model 2>/dev/null | tr -d '\r' || echo "?")
+  DEVICE_VER=$(  adb -s "$DEVICE_TARGET" shell getprop ro.build.version.release 2>/dev/null | tr -d '\r' || echo "?")
+  DEVICE_BRAND=$(adb -s "$DEVICE_TARGET" shell getprop ro.product.brand 2>/dev/null | tr -d '\r' || echo "?")
+  echo ""
+  echo "  ─────────────────────────────────────────────────────────"
+  log "Device ready"
   echo ""
   echo -e "  ${BOLD}Device:${RESET}  $DEVICE_BRAND $DEVICE_MODEL"
   echo -e "  ${BOLD}Android:${RESET} $DEVICE_VER"
-  echo -e "  ${BOLD}ID:${RESET}      $DEVICE_ID"
+  echo -e "  ${BOLD}Serial:${RESET}  $DEVICE_TARGET"
   echo ""
 
-  step "Installing Qatarat app on device..."
-  adb -s "$DEVICE_ID" install -r "$APK_PATH" 2>&1 | grep -E "Success|Failure|error" || true
-  log "App installed"
-
-  # ── Offer screen mirror ────────────────────────────────────────────
-  MIRROR_PID=""
-  if command -v scrcpy &>/dev/null; then
-    echo ""
-    echo -e "  ${CYAN}${BOLD}Mirror phone screen?${RESET}"
-    echo -e "  ${DIM}scrcpy is installed — you can watch every test step live on your PC.${RESET}"
-    echo ""
-    read -p "  Start screen mirror now? [Y/n]: " DO_MIRROR
-    if [[ ! "$DO_MIRROR" =~ ^[Nn]$ ]]; then
-      MIRROR_TITLE="Qatarat · $DEVICE_BRAND $DEVICE_MODEL · Android $DEVICE_VER"
-      scrcpy \
-        --serial "$DEVICE_ID" \
-        --window-title "$MIRROR_TITLE" \
-        --stay-awake \
-        --max-size 1080 \
-        --window-width 360 \
-        --window-height 780 \
-        &>/dev/null &
-      MIRROR_PID=$!
-      log "Mirror started (PID $MIRROR_PID) — phone screen is now visible on your PC"
+  # ── Install APK ──────────────────────────────────────────────────
+  if [ -f "$APK_PATH" ]; then
+    step "Installing Qatarat app..."
+    if adb -s "$DEVICE_TARGET" install -r "$APK_PATH" 2>&1 | grep -q "Success"; then
+      log "App installed"
+    else
+      warn "Install had warnings — app may already be up to date, continuing..."
     fi
   else
-    echo ""
-    warn "scrcpy not installed — screen mirroring unavailable."
-    echo -e "  ${DIM}Install it:  brew install scrcpy   (Mac)   or   sudo apt install scrcpy   (Linux)${RESET}"
-    echo -e "  ${DIM}Or run: bash install.sh — it installs scrcpy automatically.${RESET}"
+    warn "APK not found at project root — assuming app is already installed on device"
   fi
 
 # ═══════════════════════════════════════════════════════════════════
@@ -225,276 +255,198 @@ if [ "$PLATFORM" = "android" ]; then
 # ═══════════════════════════════════════════════════════════════════
 else
 
-  # ── iOS device detection ───────────────────────────────────────────
+  # iOS needs idb-companion
+  if ! command -v idb_companion &>/dev/null; then
+    warn "idb-companion not found — required for Maestro on iOS"
+    if command -v brew &>/dev/null; then
+      step "Installing idb-companion..."
+      brew install facebook/fb/idb-companion 2>/dev/null || \
+        { error "Install failed: brew install facebook/fb/idb-companion"; exit 1; }
+    else
+      error "Install idb-companion: brew install facebook/fb/idb-companion"; exit 1
+    fi
+  fi
+
   step "Looking for a connected iPhone..."
   echo ""
-  echo -e "  ${YELLOW}How to connect your iPhone for testing:${RESET}"
-  echo -e "  ${DIM}1. Connect iPhone via USB Lightning or USB-C cable${RESET}"
-  echo -e "  ${DIM}2. Unlock your iPhone${RESET}"
-  echo -e "  ${DIM}3. Tap 'Trust' on the 'Trust This Computer?' dialog${RESET}"
-  echo -e "  ${DIM}4. Enter your iPhone passcode if prompted${RESET}"
-  echo ""
-  echo -e "  ${YELLOW}${BOLD}Important — App must be pre-installed:${RESET}"
-  echo -e "  ${DIM}  iOS does not allow sideloading unsigned apps.${RESET}"
-  echo -e "  ${DIM}  Install Qatarat on your iPhone via:${RESET}"
-  echo -e "  ${DIM}    • Xcode (open Qatarat project → run on device), or${RESET}"
-  echo -e "  ${DIM}    • TestFlight (if you have a TestFlight invite)${RESET}"
+  echo -e "  ${DIM}1. Connect iPhone via USB (required for initial trust) or use Wi-Fi sync${RESET}"
+  echo -e "  ${DIM}2. Unlock iPhone → tap 'Trust' → enter passcode${RESET}"
+  echo -e "  ${DIM}Note: app must already be installed via Xcode or TestFlight${RESET}"
   echo ""
 
-  MAX_WAIT=90; WAIT=0; DEVICE_ID=""; LAST_UDID_COUNT=0
-
+  MAX_WAIT=90; WAIT=0; DEVICE_TARGET=""
   while [ $WAIT -lt $MAX_WAIT ]; do
-    # xcrun xctrace list devices shows real devices (not simulators) with their UDID
-    # Format: "iPhone 14 Pro (17.5) (XXXXXXXX-XXXX-...)"
-    DEVICES_RAW=$(xcrun xctrace list devices 2>/dev/null | \
-      grep -E "iPhone|iPad" | grep -v "Simulator" | grep -v "^==" || true)
-
+    DEVICES_RAW=$(xcrun xctrace list devices 2>/dev/null | grep -E "iPhone|iPad" | grep -v "Simulator" | grep -v "^==" || true)
     if [ -n "$DEVICES_RAW" ]; then
-      # Extract UDID from last column — format: "Name (version) (UDID)"
       FIRST_LINE=$(echo "$DEVICES_RAW" | head -1)
       UDID=$(echo "$FIRST_LINE" | grep -oE '\([A-F0-9a-f-]{36,}\)' | tr -d '()' | head -1)
-      DEVICE_NAME_IOS=$(echo "$FIRST_LINE" | sed 's/ ([^)]*) ([^)]*)//')
-
       if [ -n "$UDID" ]; then
-        DEVICE_ID="$UDID"
+        DEVICE_TARGET="$UDID"
+        DEVICE_MODEL=$(echo "$FIRST_LINE" | sed 's/ ([^)]*) ([^)]*)//')
         break
-      else
-        # Device visible but UDID empty = not yet trusted
-        NEW_COUNT=$(echo "$DEVICES_RAW" | wc -l | tr -d ' ')
-        if [ "$NEW_COUNT" != "$LAST_UDID_COUNT" ]; then
-          echo ""
-          echo -e "  ${YELLOW}${BOLD}[!]${RESET} iPhone detected but not yet trusted."
-          echo -e "  ${BOLD}    → On your iPhone: tap 'Trust' on the 'Trust This Computer?' dialog.${RESET}"
-          echo -e "  ${BOLD}    → Enter your passcode if asked.${RESET}"
-          LAST_UDID_COUNT="$NEW_COUNT"
-        fi
       fi
-    else
-      printf "\r  ${YELLOW}Waiting for iPhone...${RESET} ${DIM}${WAIT}s / ${MAX_WAIT}s${RESET}   "
     fi
-
+    printf "\r  Waiting for iPhone... %ds / %ds   " "$WAIT" "$MAX_WAIT"
     sleep 2; WAIT=$((WAIT + 2))
   done
   echo ""
-
-  if [ -z "$DEVICE_ID" ]; then
-    error "No iPhone found after ${MAX_WAIT}s."
-    echo ""
-    echo -e "  ${BOLD}Common fixes:${RESET}"
-    echo -e "  ${CYAN}•${RESET} Unlock your iPhone before plugging in"
-    echo -e "  ${CYAN}•${RESET} Look for 'Trust This Computer?' on the iPhone screen and tap Trust"
-    echo -e "  ${CYAN}•${RESET} Try a different cable or USB port"
-    echo -e "  ${CYAN}•${RESET} Settings → General → Transfer or Reset iPhone → Reset → Reset Location & Privacy (re-triggers trust)"
-    echo -e "  ${CYAN}•${RESET} Open Finder → click your iPhone in sidebar → it will prompt trust"
-    echo -e "  ${CYAN}•${RESET} Run: ${CYAN}xcrun xctrace list devices${RESET}  (should show your iPhone + UDID)"
-    exit 1
-  fi
-
+  [ -z "$DEVICE_TARGET" ] && { error "No iPhone found. Check connection and trust dialog."; exit 1; }
   log "iPhone connected!"
-  echo ""
-  echo -e "  ${BOLD}Device:${RESET}  $DEVICE_NAME_IOS"
-  echo -e "  ${BOLD}UDID:${RESET}    $DEVICE_ID"
-  echo ""
-  echo -e "  ${DIM}Skipping app install — iOS requires app to be pre-installed via${RESET}"
-  echo -e "  ${DIM}Xcode or TestFlight. If not installed yet, do that first.${RESET}"
+  echo -e "  ${BOLD}Device:${RESET} $DEVICE_MODEL"
+  echo -e "  ${BOLD}UDID:${RESET}   $DEVICE_TARGET"
   echo ""
 
 fi  # end platform branch
 
-# ── Test menu ───────────────────────────────────────────────────────
-echo ""
+# ── Test suite menu ──────────────────────────────────────────────────
 echo "  ─────────────────────────────────────────────────────────"
-if [ "$PLATFORM" = "ios" ]; then
-  echo -e "  ${BOLD}  Testing on:${RESET} ${CYAN}iOS (iPhone)${RESET}  ${DIM}UDID: ${DEVICE_ID:0:18}...${RESET}"
-else
-  echo -e "  ${BOLD}  Testing on:${RESET} ${GREEN}Android${RESET}  ${DIM}ID: $DEVICE_ID${RESET}"
-fi
-echo -e "  ${BOLD}  What do you want to test?${RESET}"
+echo -e "  ${BOLD}  Which flows to run?${RESET}"
 echo "  ─────────────────────────────────────────────────────────"
 echo ""
-echo -e "  ${CYAN}${BOLD}  MAESTRO (quick UI flows)${RESET}"
-echo -e "  ${BOLD}  1)${RESET} Smoke Suite        ${DIM}~5 min  — login, cart, checkout${RESET}"
-echo -e "  ${BOLD}  2)${RESET} Full Regression     ${DIM}~20 min — all 16 flows${RESET}"
+echo -e "  ${BOLD}  1)${RESET} ${GREEN}All 25 flows${RESET}  ${DIM}~40 min  — complete regression${RESET}"
+echo -e "  ${BOLD}  2)${RESET} Smoke only    ${DIM}~10 min  — flows 01-05 (login, onboard, browse, cart)${RESET}"
+echo -e "  ${BOLD}  3)${RESET} Single flow   ${DIM}enter flow number (e.g. 12)${RESET}"
 echo ""
-echo -e "  ${CYAN}${BOLD}  SINGLE FLOWS${RESET}"
-echo -e "  ${BOLD}  3)${RESET} Login / OTP"
-echo -e "  ${BOLD}  4)${RESET} Cart + Add Items"
-echo -e "  ${BOLD}  5)${RESET} Checkout + Payment"
-echo -e "  ${BOLD}  6)${RESET} Gift Card"
-echo -e "  ${BOLD}  7)${RESET} My Orders + Rating"
-echo -e "  ${BOLD}  8)${RESET} Subscription"
-echo -e "  ${BOLD}  9)${RESET} Multi-language"
-echo ""
-echo -e "  ${CYAN}${BOLD}  APPIUM (deep tests — needs Appium server running)${RESET}"
-if [ "$PLATFORM" = "ios" ]; then
-  echo -e "  ${DIM}  Requires IPA signed for your device + XCODE_ORG_ID env var${RESET}"
-fi
-echo -e "  ${BOLD}  a)${RESET} Payment Tests      ${DIM}card, Tabby, bank transfer${RESET}"
-echo -e "  ${BOLD}  b)${RESET} Gift Card Tests"
-echo -e "  ${BOLD}  c)${RESET} Subscription Tests"
-echo -e "  ${BOLD}  d)${RESET} All Appium Tests    ${DIM}~45 min${RESET}"
-echo ""
-echo -e "  ${CYAN}${BOLD}  SCREEN MIRROR${RESET}"
-if command -v scrcpy &>/dev/null; then
-  echo -e "  ${BOLD}  m)${RESET} Toggle mirror       ${DIM}show/hide phone screen on this PC${RESET}"
-  echo -e "  ${BOLD}  r)${RESET} Record + mirror      ${DIM}saves session to mirror_recordings/${RESET}"
-else
-  echo -e "  ${DIM}  m/r — install scrcpy first (run: bash install.sh)${RESET}"
-fi
-echo ""
-echo "  ─────────────────────────────────────────────────────────"
-echo ""
-read -p "  Enter choice [1-9, a-d, m, r]: " CHOICE
+read -rp "  Enter choice [1/2/3, default=1]: " SUITE_CHOICE
+SUITE_CHOICE="${SUITE_CHOICE:-1}"
 echo ""
 
-# ── Run helpers ─────────────────────────────────────────────────────
-mkdir -p "$SCRIPT_DIR/maestro/reports" "$SCRIPT_DIR/appium/reports/screenshots"
-REPORT_TS=$(date +%Y%m%d-%H%M%S)
-
-run_maestro() {
-  local FLOW="$1"
-  local LABEL="$2"
-  step "Running: $LABEL  [${PLATFORM}]"
-
-  if [ "$PLATFORM" = "ios" ]; then
-    MAESTRO_DRIVER=ios maestro \
-      --device "$DEVICE_ID" \
-      test "$FLOW" \
-      --format junit \
-      --output "$SCRIPT_DIR/maestro/reports/ios-${REPORT_TS}.xml"
-  else
-    maestro \
-      --device "$DEVICE_ID" \
-      test "$FLOW" \
-      --format junit \
-      --output "$SCRIPT_DIR/maestro/reports/android-${REPORT_TS}.xml"
-  fi
-}
-
-run_appium() {
-  local MARKER="$1"
-  local LABEL="$2"
-  step "Running: $LABEL  [${PLATFORM}]"
-
-  if [ "$PLATFORM" = "ios" ] && [ -z "$XCODE_ORG_ID" ]; then
-    warn "XCODE_ORG_ID not set — Appium iOS needs your Apple Developer Team ID."
-    echo ""
-    echo -e "  Set it before running:  ${CYAN}export XCODE_ORG_ID=XXXXXXXXXX${RESET}"
-    echo -e "  Find yours at:  ${DIM}developer.apple.com → Account → Membership → Team ID${RESET}"
-    echo ""
-    read -p "  Enter Team ID now (or press Enter to skip): " TID
-    if [ -n "$TID" ]; then
-      export XCODE_ORG_ID="$TID"
-    else
-      warn "Skipping Appium test — re-run with XCODE_ORG_ID set."
-      return
-    fi
-  fi
-
-  if ! curl -s http://127.0.0.1:4723/status &>/dev/null; then
-    warn "Starting Appium server..."
-    appium --port 4723 --log /tmp/appium-device.log &
-    APPIUM_BG_PID=$!
-    local S=0
-    until curl -s http://127.0.0.1:4723/status &>/dev/null || [ $S -ge 15 ]; do
-      sleep 1; S=$((S+1))
-    done
-    [ $S -ge 15 ] && { error "Appium server did not start. Check /tmp/appium-device.log"; exit 1; }
-    log "Appium started (PID $APPIUM_BG_PID)"
-  fi
-
-  PLATFORM="$PLATFORM" \
-  DEVICE_MODE=device \
-  IOS_UDID="$DEVICE_ID" \
-  ANDROID_UDID="$DEVICE_ID" \
-  XCODE_ORG_ID="${XCODE_ORG_ID:-}" \
-    "$SCRIPT_DIR/appium/.venv/bin/python" -m pytest \
-      "$SCRIPT_DIR/appium/tests/" \
-      ${MARKER:+-m "$MARKER"} -v \
-      --html="$SCRIPT_DIR/appium/reports/${PLATFORM}-${REPORT_TS}.html" \
-      --self-contained-html \
-      --tb=short
-}
-
-case "$CHOICE" in
-  1) run_maestro "$SCRIPT_DIR/maestro/flows/suites/smoke.yaml"                   "Smoke Suite" ;;
-  2) run_maestro "$SCRIPT_DIR/maestro/flows/suites/regression.yaml"              "Full Regression" ;;
-  3) run_maestro "$SCRIPT_DIR/maestro/flows/02_login_otp.yaml"                   "Login / OTP" ;;
-  4) run_maestro "$SCRIPT_DIR/maestro/flows/05_cart_add_items.yaml"              "Cart + Add Items" ;;
-  5) run_maestro "$SCRIPT_DIR/maestro/flows/06_checkout_payment_select.yaml"     "Checkout" ;;
-  6) run_maestro "$SCRIPT_DIR/maestro/flows/07_gift_card.yaml"                   "Gift Card" ;;
-  7) run_maestro "$SCRIPT_DIR/maestro/flows/08_my_orders.yaml"                   "My Orders + Rating" ;;
-  8) run_maestro "$SCRIPT_DIR/maestro/flows/09_subscription.yaml"                "Subscription" ;;
-  9) run_maestro "$SCRIPT_DIR/maestro/flows/10_multilanguage.yaml"               "Multi-language" ;;
-  a|A) run_appium "payment"      "Payment Tests (card, Tabby, bank)" ;;
-  b|B) run_appium "gift"         "Gift Card Tests" ;;
-  c|C) run_appium "subscription" "Subscription Tests" ;;
-  d|D) run_appium ""             "All Appium Tests" ;;
-  m|M)
-    if command -v scrcpy &>/dev/null; then
-      if [ -n "$MIRROR_PID" ] && kill -0 "$MIRROR_PID" 2>/dev/null; then
-        warn "Stopping mirror (PID $MIRROR_PID)..."
-        kill "$MIRROR_PID" 2>/dev/null || true
-        MIRROR_PID=""
-        log "Mirror stopped."
-      else
-        MIRROR_TITLE="Qatarat · ${DEVICE_BRAND:-Device} ${DEVICE_MODEL:-} · Android ${DEVICE_VER:-}"
-        scrcpy --serial "$DEVICE_ID" \
-          --window-title "$MIRROR_TITLE" \
-          --stay-awake --max-size 1080 \
-          --window-width 360 --window-height 780 \
-          &>/dev/null &
-        MIRROR_PID=$!
-        log "Mirror started (PID $MIRROR_PID)"
-      fi
-    else
-      error "scrcpy not installed — run: bash install.sh"
-    fi
+# Build the list of flow files to run
+FLOW_FILES=()
+case "$SUITE_CHOICE" in
+  1)
+    while IFS= read -r -d '' f; do
+      FLOW_FILES+=("$f")
+    done < <(find "$FLOWS_DIR" -maxdepth 1 -name '[0-9][0-9]_*.yaml' -print0 | sort -z)
+    SUITE_LABEL="All 25 flows"
     ;;
-  r|R)
-    if command -v scrcpy &>/dev/null; then
-      mkdir -p "$SCRIPT_DIR/mirror_recordings"
-      REC_FILE="$SCRIPT_DIR/mirror_recordings/session_$(date +%Y%m%d_%H%M%S).mkv"
-      MIRROR_TITLE="Qatarat · ${DEVICE_BRAND:-Device} ${DEVICE_MODEL:-} (recording)"
-      info "Recording to: $REC_FILE"
-      scrcpy --serial "$DEVICE_ID" \
-        --window-title "$MIRROR_TITLE" \
-        --stay-awake --max-size 1080 \
-        --window-width 360 --window-height 780 \
-        --record "$REC_FILE" \
-        &>/dev/null &
-      MIRROR_PID=$!
-      log "Mirror + recording started (PID $MIRROR_PID)"
-    else
-      error "scrcpy not installed — run: bash install.sh"
+  2)
+    while IFS= read -r -d '' f; do
+      FLOW_FILES+=("$f")
+    done < <(find "$FLOWS_DIR" -maxdepth 1 -name '0[1-5]_*.yaml' -print0 | sort -z)
+    SUITE_LABEL="Smoke (flows 01-05)"
+    ;;
+  3)
+    read -rp "  Enter flow number (e.g. 12): " FLOW_NUM
+    MATCH=$(find "$FLOWS_DIR" -maxdepth 1 -name "${FLOW_NUM}_*.yaml" | head -1)
+    if [ -z "$MATCH" ]; then
+      error "No flow found matching: ${FLOW_NUM}_*.yaml"
+      exit 1
     fi
+    FLOW_FILES+=("$MATCH")
+    SUITE_LABEL="Flow ${FLOW_NUM}"
     ;;
   *)
-    warn "Invalid choice: $CHOICE"
-    exit 1
-    ;;
+    error "Invalid choice"; exit 1 ;;
 esac
 
-# ── Summary ─────────────────────────────────────────────────────────
+if [ ${#FLOW_FILES[@]} -eq 0 ]; then
+  error "No flow YAML files found in $FLOWS_DIR"
+  exit 1
+fi
+
+# ── Prepare background run script ───────────────────────────────────
+mkdir -p "$REPORTS_DIR"
+
+# Write a sub-script that runs all flows sequentially and logs results
+RUN_SCRIPT="/tmp/qatarat_run_${REPORT_TS}.sh"
+cat > "$RUN_SCRIPT" <<RUNNER_EOF
+#!/usr/bin/env bash
+export PATH="$HOME/.maestro/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
+PASS=0; FAIL=0; TOTAL=${#FLOW_FILES[@]}
+echo "════════════════════════════════════════════════════════"
+echo "  Qatarat Maestro — \$TOTAL flows on $DEVICE_TARGET"
+echo "  Suite : $SUITE_LABEL"
+echo "  Start : \$(date '+%Y-%m-%d %H:%M:%S')"
+echo "════════════════════════════════════════════════════════"
 echo ""
-echo "  ─────────────────────────────────────────────────────────"
-log "Run complete!"
+RUNNER_EOF
+
+for flow_yaml in "${FLOW_FILES[@]}"; do
+  flow_name="$(basename "$flow_yaml" .yaml)"
+  cat >> "$RUN_SCRIPT" <<STEP_EOF
+echo "──────────────────────────────────────────────────────"
+echo "  [RUN]  $flow_name"
+echo "──────────────────────────────────────────────────────"
+if maestro --device "$DEVICE_TARGET" test \\
+    --format junit \\
+    --output "$REPORTS_DIR/${flow_name}-results.xml" \\
+    "$flow_yaml" ; then
+  echo "  [PASS] $flow_name"
+  PASS=\$((PASS+1))
+else
+  echo "  [FAIL] $flow_name"
+  FAIL=\$((FAIL+1))
+fi
 echo ""
-echo -e "  ${BOLD}Reports saved to:${RESET}"
-echo -e "  ${DIM}  Maestro: testing/maestro/reports/${RESET}"
-echo -e "  ${DIM}  Appium:  testing/appium/reports/${RESET}"
-echo ""
-echo -e "  ${DIM}Run again:  cd testing && bash run_on_device.sh${RESET}"
+STEP_EOF
+done
+
+cat >> "$RUN_SCRIPT" <<FOOTER_EOF
+echo "════════════════════════════════════════════════════════"
+echo "  DONE  — \$(date '+%Y-%m-%d %H:%M:%S')"
+echo "  PASS: \$PASS   FAIL: \$FAIL   TOTAL: \$TOTAL"
+echo "  Reports: $REPORTS_DIR"
+echo "════════════════════════════════════════════════════════"
+[ \$FAIL -eq 0 ] && exit 0 || exit 1
+FOOTER_EOF
+chmod +x "$RUN_SCRIPT"
+
+# ── Launch in background ─────────────────────────────────────────────
+echo -e "  ${BOLD}Starting ${#FLOW_FILES[@]} flows on${RESET} ${GREEN}$DEVICE_TARGET${RESET} ${BOLD}in background...${RESET}"
 echo ""
 
-# ── Stop mirror if still running ─────────────────────────────────────
-if [ -n "$MIRROR_PID" ] && kill -0 "$MIRROR_PID" 2>/dev/null; then
-  read -p "  Mirror is still open. Close it? [Y/n]: " CLOSE_M
-  if [[ ! "$CLOSE_M" =~ ^[Nn]$ ]]; then
-    kill "$MIRROR_PID" 2>/dev/null || true
-    log "Mirror closed."
-  else
-    echo -e "  ${DIM}Mirror running as background process $MIRROR_PID — close the window to stop it.${RESET}"
-  fi
+nohup bash "$RUN_SCRIPT" > "$LOG_FILE" 2>&1 &
+TEST_PID=$!
+
+echo -e "  ${GREEN}${BOLD}Tests are running in the background!${RESET}"
+echo ""
+echo -e "  ${BOLD}PID:${RESET}      $TEST_PID"
+echo -e "  ${BOLD}Log:${RESET}      $LOG_FILE"
+echo -e "  ${BOLD}Reports:${RESET}  $REPORTS_DIR"
+echo ""
+echo "  ─────────────────────────────────────────────────────────"
+echo -e "  ${DIM}Live output below.  Press ${BOLD}Ctrl+C${RESET}${DIM} to detach — tests keep running.${RESET}"
+echo -e "  ${DIM}Rejoin anytime:  tail -f $LOG_FILE${RESET}"
+echo -e "  ${DIM}Check status:    kill -0 $TEST_PID 2>/dev/null && echo running || echo done${RESET}"
+echo "  ─────────────────────────────────────────────────────────"
+echo ""
+
+# ── Detachable live tail ─────────────────────────────────────────────
+detach_message() {
+  echo ""
+  echo -e "  ${YELLOW}${BOLD}Detached from log.${RESET}  Tests are still running on the device."
+  echo ""
+  echo -e "  ${BOLD}Rejoin log:${RESET}   tail -f $LOG_FILE"
+  echo -e "  ${BOLD}Check done:${RESET}   kill -0 $TEST_PID 2>/dev/null && echo running || echo finished"
+  echo -e "  ${BOLD}See results:${RESET}  ls $REPORTS_DIR"
+  echo ""
+  exit 0
+}
+trap 'detach_message' INT TERM
+
+# Follow log until process finishes, then show final lines
+tail -f "$LOG_FILE" &
+TAIL_PID=$!
+
+# Wait for background test process
+set +e
+wait "$TEST_PID"
+EXIT_CODE=$?
+set -e
+sleep 1
+kill "$TAIL_PID" 2>/dev/null || true
+
+# ── Final summary ─────────────────────────────────────────────────────
+echo ""
+echo "  ─────────────────────────────────────────────────────────"
+if [ "$EXIT_CODE" -eq 0 ]; then
+  log "${GREEN}All flows passed!${RESET}"
+else
+  error "Some flows failed — check logs in $REPORTS_DIR"
 fi
+echo ""
+echo -e "  ${BOLD}Full log:${RESET}     $LOG_FILE"
+echo -e "  ${BOLD}JUnit XML:${RESET}    $REPORTS_DIR/*-results.xml"
+echo -e "  ${BOLD}Run again:${RESET}    cd testing && bash run_on_device.sh"
 echo ""
