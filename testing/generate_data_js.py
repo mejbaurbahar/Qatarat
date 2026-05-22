@@ -122,7 +122,17 @@ APPIUM_DEF = [
         {"name": "test_delete_account",  "dur": 9.3},
         {"name": "test_billing_history", "dur": 6.9},
     ]},
-    {"file": "test_payment_extended.py", "group": "Payment", "icon": "card", "tests": [
+    {"file": "test_payment_negative.py", "group": "Payment",  "icon": "shield", "tests": [
+        {"name": "test_short_card_number_shows_error",       "dur": 8.2},
+        {"name": "test_letters_in_card_number_shows_error",  "dur": 7.6},
+        {"name": "test_invalid_expiry_month_shows_error",    "dur": 8.1},
+        {"name": "test_past_year_expiry_shows_error",        "dur": 7.8},
+        {"name": "test_empty_cvv_shows_error",               "dur": 7.3},
+        {"name": "test_single_digit_cvv_shows_error",        "dur": 7.1},
+        {"name": "test_empty_cardholder_name_shows_error",   "dur": 7.4},
+        {"name": "test_all_zeros_card_shows_error",          "dur": 8.5},
+    ]},
+    {"file": "test_payment_extended.py", "group": "Payment",  "icon": "card",   "tests": [
         {"name": "test_card_number_with_spaces",        "dur": 6.2},
         {"name": "test_card_number_with_dashes",        "dur": 5.8},
         {"name": "test_card_number_with_padding_spaces","dur": 5.4},
@@ -139,7 +149,18 @@ APPIUM_DEF = [
         {"name": "test_cardholder_uppercase_accepted",  "dur": 4.7},
         {"name": "test_cardholder_50_chars",            "dur": 5.5},
     ]},
-    {"file": "test_auth_edge_cases.py", "group": "Auth", "icon": "lock", "tests": [
+    {"file": "test_login_negative.py",  "group": "Auth",     "icon": "lock",   "tests": [
+        {"name": "test_empty_phone_blocks_continue",         "dur": 4.8},
+        {"name": "test_too_short_phone_shows_error",         "dur": 5.2},
+        {"name": "test_too_long_phone_shows_error",          "dur": 5.1},
+        {"name": "test_letters_in_phone_shows_error",        "dur": 5.3},
+        {"name": "test_special_chars_in_phone_shows_error",  "dur": 5.4},
+        {"name": "test_wrong_otp_shows_error",               "dur": 8.7},
+        {"name": "test_all_zeros_otp_shows_error",           "dur": 8.4},
+        {"name": "test_empty_otp_blocks_verify",             "dur": 7.1},
+        {"name": "test_otp_resend_link_visible",             "dur": 6.8},
+    ]},
+    {"file": "test_auth_edge_cases.py", "group": "Auth",     "icon": "lock",   "tests": [
         {"name": "test_phone_leading_spaces_stripped",    "dur": 5.2},
         {"name": "test_phone_plus880_prefix",             "dur": 4.8},
         {"name": "test_phone_all_same_digits",            "dur": 4.5},
@@ -154,7 +175,63 @@ APPIUM_DEF = [
         {"name": "test_otp_special_chars_blocked",        "dur": 4.3},
         {"name": "test_otp_100_digit_input",              "dur": 4.6},
     ]},
-    {"file": "test_browse_search.py", "group": "Catalog", "icon": "search", "tests": [
+    {"file": "test_cart_boundary.py",  "group": "Commerce", "icon": "bag",    "tests": [
+        {"name": "test_empty_cart_checkout_is_blocked",          "dur": 6.3},
+        {"name": "test_quantity_increment_updates_total",         "dur": 8.7},
+        {"name": "test_quantity_decrement_to_one_keeps_item",     "dur": 9.1},
+        {"name": "test_quantity_decrement_at_one_removes_or_prompts", "dur": 8.4},
+        {"name": "test_maximum_quantity_does_not_crash",          "dur": 14.2},
+        {"name": "test_remove_all_items_shows_empty_state",       "dur": 7.8},
+    ]},
+    {"file": "test_promo_codes.py",    "group": "Commerce", "icon": "tag",    "tests": [
+        {"name": "test_valid_promo_applies_successfully",                "dur": 9.4},
+        {"name": "test_invalid_promo_shows_error",                       "dur": 8.1},
+        {"name": "test_empty_promo_shows_error",                         "dur": 5.6},
+        {"name": "test_expired_promo_shows_error",                       "dur": 8.3},
+        {"name": "test_lowercase_promo_handled",                         "dur": 8.7},
+        {"name": "test_promo_with_spaces_is_trimmed_or_rejected",        "dur": 8.5},
+        {"name": "test_special_chars_promo_shows_error",                 "dur": 7.4},
+        {"name": "test_sql_injection_in_promo_is_safe",                  "dur": 8.9},
+        {"name": "test_very_long_promo_does_not_crash",                  "dur": 7.6},
+    ]},
+    {"file": "test_gift_card_boundary.py","group": "Commerce","icon": "gift", "tests": [
+        {"name": "test_very_long_recipient_name_handled",    "dur": 6.8},
+        {"name": "test_special_chars_in_recipient_name",     "dur": 6.2},
+        {"name": "test_arabic_name_accepted",                "dur": 5.9},
+        {"name": "test_invalid_recipient_phone_shows_error", "dur": 7.1},
+        {"name": "test_short_recipient_phone_shows_error",   "dur": 6.7},
+        {"name": "test_xss_in_message_is_safe",              "dur": 7.4},
+        {"name": "test_sql_injection_in_message_is_safe",    "dur": 7.8},
+        {"name": "test_emoji_in_message_does_not_crash",     "dur": 6.4},
+        {"name": "test_very_long_message_is_handled",        "dur": 6.9},
+    ]},
+    {"file": "test_subscription_boundary.py","group":"Commerce","icon":"repeat","tests": [
+        {"name": "test_skipping_subscription_reaches_payment",   "dur": 9.1},
+        {"name": "test_weekly_then_back_resets_selection",       "dur": 8.6},
+        {"name": "test_subscription_prompt_has_both_options",    "dur": 5.2},
+        {"name": "test_subscription_frequency_options_shown",    "dur": 6.8},
+        {"name": "test_cancel_active_subscription_declined",     "dur": 11.3},
+        {"name": "test_billing_history_accessible",              "dur": 9.7},
+    ]},
+    {"file": "test_profile_edge_cases.py","group": "Account", "icon": "user",  "tests": [
+        {"name": "test_logout_cancel_stays_logged_in",           "dur": 7.2},
+        {"name": "test_delete_account_cancel_stays_active",      "dur": 7.8},
+        {"name": "test_currency_list_loads_without_error",       "dur": 6.4},
+        {"name": "test_about_page_has_app_info",                 "dur": 5.9},
+        {"name": "test_help_support_contact_options_visible",    "dur": 8.1},
+        {"name": "test_help_search_no_results_shows_empty_state","dur": 7.6},
+        {"name": "test_help_search_sql_injection_is_safe",       "dur": 8.2},
+    ]},
+    {"file": "test_orders_edge_cases.py","group": "Account",  "icon": "list",  "tests": [
+        {"name": "test_search_with_no_results_shows_empty_state",    "dur": 7.3},
+        {"name": "test_search_with_special_chars_does_not_crash",    "dur": 6.8},
+        {"name": "test_empty_rating_feedback_shows_error",           "dur": 9.1},
+        {"name": "test_long_rating_feedback_is_handled",             "dur": 10.4},
+        {"name": "test_special_chars_in_feedback_are_safe",          "dur": 9.7},
+        {"name": "test_order_detail_shows_required_fields",          "dur": 7.6},
+        {"name": "test_cancel_order_dialog_can_be_dismissed",        "dur": 8.2},
+    ]},
+    {"file": "test_browse_search.py",  "group": "Catalog",  "icon": "search", "tests": [
         {"name": "test_single_character_search",        "dur": 4.8},
         {"name": "test_search_100_chars_does_not_crash","dur": 5.1},
         {"name": "test_search_arabic_text",             "dur": 5.4},
@@ -255,11 +332,23 @@ def _build_demo_data(now):
 
     appium = []
     demo_statuses = {
-        "test_cancel_flow": "flaky",
-        "test_unavailable_items": "fail",
+        "test_cancel_flow":                          "flaky",
+        "test_unavailable_items":                    "fail",
+        "test_past_year_expiry_shows_error":         "flaky",
+        "test_wrong_otp_shows_error":                "flaky",
+        "test_maximum_quantity_does_not_crash":      "flaky",
+        "test_sql_injection_in_promo_is_safe":       "pass",
+        "test_xss_in_message_is_safe":               "pass",
+        "test_cancel_active_subscription_declined":  "flaky",
+        "test_help_search_sql_injection_is_safe":    "pass",
+        "test_search_sql_injection_is_safe":         "pass",
     }
     demo_errors = {
-        "test_unavailable_items": "AssertionError: 'sold_out' label not visible",
+        "test_unavailable_items": "AssertionError: 'sold_out' label not visible after 8000ms",
+        "test_past_year_expiry_shows_error": "StaleElementReferenceException on retry attempt 2/3",
+        "test_wrong_otp_shows_error": "StaleElementReferenceException: element detached after OTP screen transition",
+        "test_maximum_quantity_does_not_crash": "StaleElementReferenceException: '+' button re-bound after scroll",
+        "test_cancel_active_subscription_declined": "TimeoutException: 'No' button took >8s to appear",
     }
     for af in APPIUM_DEF:
         tests = []

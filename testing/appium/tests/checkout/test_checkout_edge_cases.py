@@ -80,7 +80,7 @@ class TestPaymentMethodSwitching:
         _reach_checkout(driver)
         try:
             promo_field = driver.find_element(AppiumBy.ACCESSIBILITY_ID, "promo_code_field")
-            promo_field.send_keys(ValidData.PROMO_CODE)
+            promo_field.send_keys(ValidData.PROMO)
             driver.find_element(AppiumBy.ACCESSIBILITY_ID, "apply_promo_button").click()
             driver.find_element(AppiumBy.ACCESSIBILITY_ID, "payment_card_option").click()
         except Exception:
