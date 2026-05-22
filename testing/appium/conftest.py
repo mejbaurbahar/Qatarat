@@ -2,6 +2,7 @@ import os
 import pytest
 import allure
 from appium import webdriver
+from appium.options import AppiumOptions
 from capabilities.android_caps import ANDROID_DEVICE_CAPS, ANDROID_EMULATOR_CAPS
 from capabilities.ios_caps import IOS_DEVICE_CAPS, IOS_SIMULATOR_CAPS
 from utils.helpers import APPIUM_SERVER, screenshot
@@ -20,8 +21,8 @@ def get_caps():
 
 @pytest.fixture(scope="function")
 def driver():
-    caps = get_caps()
-    d = webdriver.Remote(APPIUM_SERVER, caps)
+    options = AppiumOptions().load_capabilities(get_caps())
+    d = webdriver.Remote(APPIUM_SERVER, options=options)
     d.implicitly_wait(10)
     yield d
     d.quit()
@@ -30,7 +31,8 @@ def driver():
 @pytest.fixture(scope="module")
 def driver_module():
     caps = {**get_caps(), "appium:noReset": True}
-    d = webdriver.Remote(APPIUM_SERVER, caps)
+    options = AppiumOptions().load_capabilities(caps)
+    d = webdriver.Remote(APPIUM_SERVER, options=options)
     d.implicitly_wait(10)
     yield d
     d.quit()
