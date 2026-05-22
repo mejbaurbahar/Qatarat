@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Run Appium tests — auto-starts an Android emulator if none is connected.
+# Run Appium tests — fully automatic.
+# First run: downloads Android SDK + system image (~1.5 GB), creates AVD, boots emulator.
+# Subsequent runs: boots emulator in ~60 s, runs tests, shuts down on exit.
+#
 # Usage:
-#   bash run_appium.sh                        — all tests (Android emulator)
-#   bash run_appium.sh payment                — payment tests only
-#   bash run_appium.sh gift                   — gift card tests only
-#   bash run_appium.sh subscription           — subscription tests only
-#   bash run_appium.sh account                — profile & account tests only
-#   PLATFORM=ios bash run_appium.sh           — iOS tests
-#   DEVICE_MODE=device bash run_appium.sh     — real device (skip emulator launch)
+#   bash run_appium.sh                  — all tests
+#   bash run_appium.sh payment          — payment tests only
+#   bash run_appium.sh gift|subscription|account|streaming
+#   DEVICE_MODE=device bash run_appium.sh  — skip emulator, use real phone
 
 set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,12 +21,9 @@ EMU_PID=""
 
 export PLATFORM DEVICE_MODE
 
-# ── Use venv Python ──────────────────────────────────────────────────────────
+# ── venv Python ──────────────────────────────────────────────────────────────
 VENV_PYTHON=".venv/bin/python"
-if [ ! -f "$VENV_PYTHON" ]; then
-  echo "⚠  venv not found — run install.sh first"
-  VENV_PYTHON="python3"
-fi
+[ ! -f "$VENV_PYTHON" ] && { echo "⚠  venv not found — run install.sh first"; VENV_PYTHON="python3"; }
 
 # ── Cleanup on exit ──────────────────────────────────────────────────────────
 cleanup() {
@@ -36,106 +33,153 @@ cleanup() {
     kill "$EMU_PID" 2>/dev/null || true
   fi
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
-# ── Find Android emulator binary ─────────────────────────────────────────────
-find_emulator() {
-  local candidates=(
-    "${ANDROID_HOME:-}/emulator/emulator"
-    "$HOME/Library/Android/sdk/emulator/emulator"
-    "$HOME/Android/Sdk/emulator/emulator"
-    "/usr/local/bin/emulator"
-    "$(which emulator 2>/dev/null || true)"
-  )
-  for c in "${candidates[@]}"; do
-    [ -x "$c" ] && echo "$c" && return 0
-  done
-  return 1
+# ════════════════════════════════════════════════════════════════════════════
+# Android SDK auto-setup
+# ════════════════════════════════════════════════════════════════════════════
+SDK_DIR="${ANDROID_HOME:-$HOME/.qatarat-android-sdk}"
+CMDLINE_BIN="$SDK_DIR/cmdline-tools/latest/bin"
+
+_sdk_url() {
+  local build="11076708"   # cmdline-tools 2024.2 — stable on arm64 + x86_64
+  case "$(uname)-$(uname -m)" in
+    Darwin-*)  echo "https://dl.google.com/android/repository/commandlinetools-mac-${build}_latest.zip" ;;
+    Linux-*)   echo "https://dl.google.com/android/repository/commandlinetools-linux-${build}_latest.zip" ;;
+    *)         echo ""; return 1 ;;
+  esac
 }
 
-# ── Auto-start emulator if needed ────────────────────────────────────────────
-if [ "$PLATFORM" = "android" ] && [ "$DEVICE_MODE" = "emulator" ]; then
-  CONNECTED=$(adb devices 2>/dev/null | grep -v "List of devices" | grep -v "^$" | grep -c "device$" || true)
+ensure_cmdline_tools() {
+  [ -f "$CMDLINE_BIN/sdkmanager" ] && return 0
+  local url; url=$(_sdk_url)
+  echo "▶  Downloading Android cmdline-tools (~120 MB, one-time)..."
+  mkdir -p "$SDK_DIR/cmdline-tools"
+  curl -L --progress-bar "$url" -o /tmp/qatarat_cmdtools.zip
+  unzip -q /tmp/qatarat_cmdtools.zip -d "$SDK_DIR/cmdline-tools/"
+  # The zip extracts as "cmdline-tools/"; rename to "latest/"
+  if [ -d "$SDK_DIR/cmdline-tools/cmdline-tools" ]; then
+    mv "$SDK_DIR/cmdline-tools/cmdline-tools" "$SDK_DIR/cmdline-tools/latest"
+  fi
+  rm -f /tmp/qatarat_cmdtools.zip
+  echo "   cmdline-tools ready."
+}
 
-  if [ "${CONNECTED:-0}" -eq 0 ]; then
-    echo "▶  No Android device connected — looking for emulator..."
+ensure_emulator_binary() {
+  [ -f "$SDK_DIR/emulator/emulator" ] && return 0
+  echo "▶  Installing Android emulator (via sdkmanager)..."
+  yes | "$CMDLINE_BIN/sdkmanager" --sdk_root="$SDK_DIR" --licenses > /dev/null 2>&1 || true
+  "$CMDLINE_BIN/sdkmanager" --sdk_root="$SDK_DIR" "emulator" "platform-tools"
+  echo "   Emulator binary ready."
+}
 
-    EMU_BIN=$(find_emulator || true)
+ensure_system_image() {
+  local arch; arch=$(uname -m)
+  local abi; abi=$([ "$arch" = "arm64" ] && echo "arm64-v8a" || echo "x86_64")
+  SYS_IMAGE="system-images;android-34;google_apis;${abi}"
 
-    if [ -z "$EMU_BIN" ]; then
-      echo ""
-      echo "✗  Android emulator not found."
-      echo "   Install it via Android Studio:"
-      echo "     1. Download Android Studio: https://developer.android.com/studio"
-      echo "     2. Open SDK Manager → SDK Tools → check 'Android Emulator'"
-      echo "     3. Open Device Manager → Create Virtual Device → Pixel 7 / API 34"
-      echo "     4. Re-run: bash run_appium.sh"
-      echo ""
-      echo "   Or install SDK command-line tools and run:"
-      echo "     sdkmanager 'emulator' 'system-images;android-34;google_apis;arm64-v8a'"
-      echo "     avdmanager create avd -n Pixel_7_API_34 -k 'system-images;android-34;google_apis;arm64-v8a'"
-      exit 1
-    fi
+  if "$CMDLINE_BIN/sdkmanager" --sdk_root="$SDK_DIR" --list_installed 2>/dev/null \
+       | grep -q "system-images;android-34"; then
+    return 0
+  fi
 
-    # Pick AVD: prefer what caps expect, fall back to first available
-    PREFERRED_AVD="${ANDROID_AVD:-Pixel_7_API_34}"
-    AVDS=$("$EMU_BIN" -list-avds 2>/dev/null || true)
+  echo "▶  Downloading Android 34 system image for ${abi} (~1.5 GB, one-time)..."
+  echo "   Grab a coffee — this only happens once."
+  yes | "$CMDLINE_BIN/sdkmanager" --sdk_root="$SDK_DIR" --licenses > /dev/null 2>&1 || true
+  "$CMDLINE_BIN/sdkmanager" --sdk_root="$SDK_DIR" "$SYS_IMAGE"
+  echo "   System image ready."
+}
 
-    if echo "$AVDS" | grep -qxF "$PREFERRED_AVD"; then
-      AVD="$PREFERRED_AVD"
-    else
-      AVD=$(echo "$AVDS" | grep -v "^$" | head -1)
-    fi
+ensure_avd() {
+  local avd_name="${ANDROID_AVD:-Pixel_7_API_34}"
+  local arch; arch=$(uname -m)
+  local abi; abi=$([ "$arch" = "arm64" ] && echo "arm64-v8a" || echo "x86_64")
+  SYS_IMAGE="system-images;android-34;google_apis;${abi}"
 
-    if [ -z "$AVD" ]; then
-      echo ""
-      echo "✗  No AVDs found. Create one first:"
-      echo "   Android Studio → Device Manager → Create Virtual Device"
-      echo "   Recommended: Pixel 7 / API 34 (arm64)"
-      echo ""
-      echo "   Or via command line:"
-      echo "     sdkmanager 'system-images;android-34;google_apis;arm64-v8a'"
-      echo "     avdmanager create avd -n Pixel_7_API_34 -k 'system-images;android-34;google_apis;arm64-v8a'"
-      exit 1
-    fi
+  if "$CMDLINE_BIN/avdmanager" list avd 2>/dev/null | grep -q "Name: ${avd_name}"; then
+    echo "   AVD '${avd_name}' already exists."
+    return 0
+  fi
 
-    echo "   Launching AVD: $AVD"
-    "$EMU_BIN" -avd "$AVD" -no-snapshot-load -no-audio -no-boot-anim -no-window &
-    EMU_PID=$!
-    STARTED_EMU=true
-    echo "   Emulator PID: $EMU_PID — waiting for boot (up to 3 min)..."
-
-    # Wait for adb to see the device
-    adb wait-for-device 2>/dev/null
-
-    # Wait for sys.boot_completed=1
-    BOOT_TIMEOUT=180
-    ELAPSED=0
-    BOOT=""
-    while [ "$ELAPSED" -lt "$BOOT_TIMEOUT" ]; do
-      BOOT=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || true)
-      [ "$BOOT" = "1" ] && break
-      sleep 3
-      ELAPSED=$((ELAPSED + 3))
-      printf "   Boot wait: %ds / %ds\r" "$ELAPSED" "$BOOT_TIMEOUT"
-    done
-    echo ""
-
-    if [ "$BOOT" != "1" ]; then
-      echo "✗  Emulator did not boot within ${BOOT_TIMEOUT}s — aborting."
-      exit 1
-    fi
-
-    # Dismiss keyguard
-    adb shell input keyevent 82 2>/dev/null || true
-    sleep 1
-    echo "   Emulator ready."
+  echo "▶  Creating AVD: ${avd_name}..."
+  # Try pixel_7 hardware profile, fall back to pixel
+  if echo "no" | "$CMDLINE_BIN/avdmanager" \
+        --sdk_root="$SDK_DIR" create avd \
+        -n "$avd_name" -k "$SYS_IMAGE" -d "pixel_7" --force 2>/dev/null; then
+    echo "   AVD created (Pixel 7 profile)."
   else
-    echo "   Device already connected (${CONNECTED} found)."
+    echo "no" | "$CMDLINE_BIN/avdmanager" \
+        --sdk_root="$SDK_DIR" create avd \
+        -n "$avd_name" -k "$SYS_IMAGE" --force
+    echo "   AVD created (default profile)."
+  fi
+}
+
+launch_emulator() {
+  local avd_name="${ANDROID_AVD:-Pixel_7_API_34}"
+  export ANDROID_HOME="$SDK_DIR"
+  export PATH="$SDK_DIR/emulator:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
+
+  echo "▶  Launching emulator '${avd_name}'..."
+  "$SDK_DIR/emulator/emulator" \
+    -avd "$avd_name" \
+    -no-snapshot-load \
+    -no-audio \
+    -no-boot-anim \
+    -gpu swiftshader_indirect \
+    > /tmp/qatarat_emu.log 2>&1 &
+  EMU_PID=$!
+  STARTED_EMU=true
+  echo "   Emulator PID: $EMU_PID — waiting for boot (up to 3 min)..."
+
+  adb -s emulator-5554 wait-for-device 2>/dev/null || adb wait-for-device 2>/dev/null || true
+
+  local timeout=180 elapsed=0 boot=""
+  while [ "$elapsed" -lt "$timeout" ]; do
+    boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || true)
+    [ "$boot" = "1" ] && break
+    sleep 3; elapsed=$((elapsed + 3))
+    printf "   Boot: %ds / %ds\r" "$elapsed" "$timeout"
+  done
+  echo ""
+
+  if [ "$boot" != "1" ]; then
+    echo "✗  Emulator did not boot within ${timeout}s."
+    echo "   Check /tmp/qatarat_emu.log for details."
+    exit 1
+  fi
+
+  adb shell input keyevent 82 2>/dev/null || true
+  sleep 1
+  echo "   Emulator ready."
+}
+
+setup_and_launch_emulator() {
+  export ANDROID_HOME="$SDK_DIR"
+  export PATH="$SDK_DIR/emulator:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/platform-tools:$PATH"
+
+  ensure_cmdline_tools
+  ensure_emulator_binary
+  ensure_system_image
+  ensure_avd
+  launch_emulator
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# Main
+# ════════════════════════════════════════════════════════════════════════════
+if [ "$PLATFORM" = "android" ] && [ "$DEVICE_MODE" = "emulator" ]; then
+  CONNECTED=$(adb devices 2>/dev/null | grep -v "List of devices" | grep -v "^$" \
+              | grep -c "device$" 2>/dev/null || echo "0")
+
+  if [ "${CONNECTED:-0}" -gt 0 ]; then
+    echo "   Device already connected (${CONNECTED} found) — skipping emulator launch."
+  else
+    setup_and_launch_emulator
   fi
 fi
 
-# ── Start Appium server if not running ───────────────────────────────────────
+# ── Start Appium server ──────────────────────────────────────────────────────
 if ! curl -s http://127.0.0.1:4723/status > /dev/null 2>&1; then
   echo "▶  Starting Appium server..."
   appium --port 4723 --log appium.log &
@@ -146,27 +190,29 @@ else
   echo "   Appium already running on :4723"
 fi
 
-mkdir -p reports/screenshots
+mkdir -p reports/screenshots allure-results
 
 # ── Run tests ────────────────────────────────────────────────────────────────
+PYTEST_ARGS=(
+  tests/ -v
+  --html="reports/report.html" --self-contained-html
+  --junit-xml="reports/results.xml"
+  --alluredir="allure-results"
+  --tb=short
+)
+
 if [ -n "$MARKER" ]; then
   echo "▶  Running Appium tests [platform=$PLATFORM, marker=$MARKER]..."
-  "$VENV_PYTHON" -m pytest tests/ -m "$MARKER" -v \
-    --html="reports/report.html" --self-contained-html \
-    --junit-xml="reports/results.xml" \
-    --alluredir="allure-results" \
-    --tb=short
+  "$VENV_PYTHON" -m pytest "${PYTEST_ARGS[@]}" -m "$MARKER"
 else
   echo "▶  Running ALL Appium tests [platform=$PLATFORM]..."
-  "$VENV_PYTHON" -m pytest tests/ -v \
-    --html="reports/report.html" --self-contained-html \
-    --junit-xml="reports/results.xml" \
-    --alluredir="allure-results" \
-    --tb=short
+  "$VENV_PYTHON" -m pytest "${PYTEST_ARGS[@]}"
 fi
 
 RC=$?
 echo ""
-echo "✓ Appium run complete (exit $RC)"
-echo "  HTML report: $(pwd)/reports/report.html"
+echo "$([ $RC -eq 0 ] && echo '✓' || echo '✗') Appium run complete (exit $RC)"
+echo "  HTML:   $(pwd)/reports/report.html"
+echo "  JUnit:  $(pwd)/reports/results.xml"
+echo "  Allure: $(pwd)/allure-results/"
 exit $RC
