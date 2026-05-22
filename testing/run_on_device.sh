@@ -23,9 +23,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APK_PATH="$SCRIPT_DIR/../Qatarat (Lambda-Stage).apk"
 
 # ── PATH setup ──────────────────────────────────────────────────────
-export JAVA_HOME="/opt/homebrew/opt/openjdk@17"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export PATH="$JAVA_HOME/bin:$HOME/.maestro/bin:$ANDROID_HOME/platform-tools:$PATH"
+# Resolve JAVA_HOME — prefer user env, then Homebrew Apple Silicon, then Intel
+if [ -z "$JAVA_HOME" ]; then
+  if   [ -d "/opt/homebrew/opt/openjdk@17" ]; then JAVA_HOME="/opt/homebrew/opt/openjdk@17"
+  elif [ -d "/usr/local/opt/openjdk@17" ];    then JAVA_HOME="/usr/local/opt/openjdk@17"
+  elif command -v java &>/dev/null;            then JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(which java)")")")"
+  fi
+fi
+# Resolve ANDROID_HOME — prefer user env, then standard locations
+if [ -z "$ANDROID_HOME" ]; then
+  if   [ -d "$HOME/Library/Android/sdk" ];   then ANDROID_HOME="$HOME/Library/Android/sdk"
+  elif [ -d "$HOME/Android/sdk" ];            then ANDROID_HOME="$HOME/Android/sdk"
+  fi
+fi
+export JAVA_HOME ANDROID_HOME
+export PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$HOME/.maestro/bin:${ANDROID_HOME:+$ANDROID_HOME/platform-tools:}$PATH"
 
 # ── Banner ──────────────────────────────────────────────────────────
 clear
@@ -80,35 +92,79 @@ log "APK found ($APK_SIZE)"
 # ── USB device detection ────────────────────────────────────────────
 step "Looking for a connected Android device..."
 echo ""
-echo -e "  ${YELLOW}How to enable USB Debugging on your Android phone:${RESET}"
+echo -e "  ${YELLOW}How to enable USB Debugging:${RESET}"
 echo -e "  ${DIM}1. Settings → About Phone → tap 'Build Number' 7 times${RESET}"
-echo -e "  ${DIM}2. Settings → Developer Options → turn on 'USB Debugging'${RESET}"
-echo -e "  ${DIM}3. Connect your phone via USB cable${RESET}"
-echo -e "  ${DIM}4. Accept the 'Allow USB Debugging' dialog on your phone${RESET}"
+echo -e "  ${DIM}2. Settings → Developer Options → enable 'USB Debugging'${RESET}"
+echo -e "  ${DIM}3. Connect phone via USB cable (use data cable, not charge-only)${RESET}"
+echo -e "  ${DIM}4. Unlock phone and tap 'Allow' on the USB Debugging dialog${RESET}"
 echo ""
 
-# Wait up to 30 seconds for a device
+# Kill & restart ADB server — clears stale state that hides real devices
+printf "  Resetting ADB server..."
+adb kill-server 2>/dev/null; adb start-server 2>/dev/null
+echo -e " ${DIM}done${RESET}"
+echo ""
+
+# Wait up to 90 seconds, showing live adb devices output so user can see 'unauthorized'
+MAX_WAIT=90
 WAIT=0
-while true; do
-  DEVICE_LINE=$(adb devices 2>/dev/null | grep -v "^List\|^$\|^*" | grep "device$" | head -1)
+DEVICE_ID=""
+LAST_STATE=""
+
+while [ $WAIT -lt $MAX_WAIT ]; do
+  # Get raw adb devices lines (skip header and blank)
+  RAW=$(adb devices 2>/dev/null | tail -n +2 | grep -v "^$" || true)
+
+  # Check for fully authorised device
+  DEVICE_LINE=$(echo "$RAW" | grep "device$" | head -1)
   if [ -n "$DEVICE_LINE" ]; then
     DEVICE_ID=$(echo "$DEVICE_LINE" | awk '{print $1}')
     break
   fi
-  if [ $WAIT -ge 30 ]; then
-    error "No device found after 30 seconds."
-    echo ""
-    echo "  Make sure:"
-    echo "  • USB Debugging is ON (see steps above)"
-    echo "  • Phone is unlocked"
-    echo "  • USB cable is properly connected"
-    echo "  • You tapped 'Allow' on the USB debugging dialog"
-    exit 1
+
+  # Check for device seen but not yet authorized
+  UNAUTH=$(echo "$RAW" | grep "unauthorized" | head -1)
+  if [ -n "$UNAUTH" ]; then
+    UNAUTH_ID=$(echo "$UNAUTH" | awk '{print $1}')
+    if [ "$LAST_STATE" != "unauthorized:$UNAUTH_ID" ]; then
+      echo ""
+      echo -e "  ${YELLOW}${BOLD}[!]${RESET} Phone detected (${UNAUTH_ID}) but USB Debugging not authorized yet."
+      echo -e "  ${BOLD}    → Unlock your phone and tap 'Allow' on the USB Debugging dialog.${RESET}"
+      echo -e "  ${DIM}    Waiting for authorization...${RESET}"
+      LAST_STATE="unauthorized:$UNAUTH_ID"
+    fi
+  else
+    # No device at all
+    if [ "$LAST_STATE" != "nodevice" ]; then
+      LAST_STATE="nodevice"
+    fi
+    printf "\r  ${YELLOW}Waiting for device...${RESET} ${DIM}${WAIT}s / ${MAX_WAIT}s${RESET}   "
   fi
-  printf "\r  ${YELLOW}Waiting for device... ${WAIT}s${RESET} "
-  sleep 1
-  WAIT=$((WAIT + 1))
+
+  sleep 2
+  WAIT=$((WAIT + 2))
 done
+echo ""
+
+if [ -z "$DEVICE_ID" ]; then
+  echo ""
+  error "No device found after ${MAX_WAIT} seconds."
+  echo ""
+  echo -e "  ${BOLD}Diagnostics:${RESET}"
+  echo -e "  ${DIM}Run this to see what ADB sees:${RESET}"
+  echo ""
+  echo -e "    ${CYAN}adb devices${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Common fixes:${RESET}"
+  echo -e "  ${CYAN}•${RESET} ${BOLD}Swap the USB cable${RESET} — charge-only cables have no data pins"
+  echo -e "  ${CYAN}•${RESET} Try a different USB port on your Mac"
+  echo -e "  ${CYAN}•${RESET} Unlock the phone and check for the 'Allow USB Debugging' popup"
+  echo -e "  ${CYAN}•${RESET} Revoke & re-grant USB debugging: Developer Options → Revoke USB debugging authorizations"
+  echo -e "  ${CYAN}•${RESET} On Samsung: enable both 'USB Debugging' AND 'Install via USB'"
+  echo -e "  ${CYAN}•${RESET} Try: ${CYAN}adb kill-server && adb start-server && adb devices${RESET}"
+  echo ""
+  exit 1
+fi
 
 echo ""
 echo ""
